@@ -32,9 +32,9 @@ class Allergy(StrictBaseModel):
 
 
 class ReviewOfSystems(StrictBaseModel):
-    constitutional: Optional[str] = Field(default=None, alias="constitutional_symptoms")
+    constitutional: Optional[str] = None
     eyes: Optional[str] = None
-    ent: Optional[str] = Field(default=None, alias="ears_nose_mouth_throat")
+    ent: Optional[str] = None
     cardiovascular: Optional[str] = None
     respiratory: Optional[str] = None
     gastrointestinal: Optional[str] = None
@@ -56,12 +56,12 @@ class ReviewOfSystems(StrictBaseModel):
 
 
 class VitalSigns(StrictBaseModel):
-    temperature_c: Optional[float] = None
+    temperature_c: Optional[float] = Field(default=None, ge=25, le=45)
     blood_pressure: Optional[str] = None
-    pulse_bpm: Optional[int] = None
-    respiratory_rate_bpm: Optional[int] = None
-    spo2_percent: Optional[int] = None
-    weight_kg: Optional[float] = None
+    pulse_bpm: Optional[int] = Field(default=None, ge=0, le=300)
+    respiratory_rate_bpm: Optional[int] = Field(default=None, ge=0, le=100)
+    spo2_percent: Optional[int] = Field(default=None, ge=0, le=100)
+    weight_kg: Optional[float] = Field(default=None, ge=0, le=500)
 
 
 class PhysicalExam(StrictBaseModel):
@@ -101,9 +101,9 @@ class DetailedClinicalNote(StrictBaseModel):
     history_of_presenting_illness: Optional[str] = None
     emergency_department_course: Optional[str] = None
 
-    past_medical_history: List[str] = Field(default_factory=list)
-    home_medications: List[Medication] = Field(default_factory=list)
-    allergies: List[Allergy] = Field(default_factory=list)
+    past_medical_history: Optional[List[str]] = None
+    home_medications: Optional[List[Medication]] = None
+    allergies: Optional[List[Allergy]] = None
 
     social_history: Optional[str] = None
     family_history: Optional[str] = None
@@ -111,13 +111,13 @@ class DetailedClinicalNote(StrictBaseModel):
     review_of_systems: Optional[ReviewOfSystems] = None
     physical_exam: Optional[PhysicalExam] = None
 
-    lab_results: List[LabResultGroup] = Field(default_factory=list)
-    imaging_results: List[ImagingResult] = Field(default_factory=list)
+    lab_results: Optional[List[LabResultGroup]] = None
+    imaging_results: Optional[List[ImagingResult]] = None
 
-    assessment_plan: List[AssessmentPlanItem] = Field(default_factory=list)
+    assessment_plan: Optional[List[AssessmentPlanItem]] = None
 
     two_midnight_documentation: Optional[str] = None
-    time_spent_minutes: Optional[int] = None
+    time_spent_minutes: Optional[int] = Field(default=None, ge=0)
 
 
 class StructuredClinicalOutput(StrictBaseModel):

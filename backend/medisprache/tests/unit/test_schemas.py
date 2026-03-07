@@ -45,8 +45,8 @@ def test_detailed_clinical_note_valid_minimal():
     """Valid minimal DetailedClinicalNote: only optional fields, no required."""
     note = DetailedClinicalNote()
     assert note.chief_complaint is None
-    assert note.past_medical_history == []
-    assert note.home_medications == []
+    assert note.past_medical_history is None
+    assert note.home_medications is None
 
 
 def test_detailed_clinical_note_valid_with_chief_complaint():
@@ -349,20 +349,28 @@ def test_omission_empty_placeholders_not_forced():
 
 def test_omission_empty_lists_still_present_with_exclude_none():
     """
-    With exclude_none=True only None is excluded; default_factory=list fields
-    remain as []. For template: omit when empty at render time (filter empty lists).
+    With exclude_none=True, optional list fields that are None are omitted.
+    When list fields are explicitly set to [] they remain in the dump.
+    For template: omit when empty at render time (filter empty lists).
     """
     note = DetailedClinicalNote(chief_complaint="Pain")
     dumped = note.model_dump(exclude_none=True)
-    # List fields with default_factory=list are not None, so they stay
-    assert "past_medical_history" in dumped
-    assert dumped["past_medical_history"] == []
-    assert "home_medications" in dumped
-    assert dumped["home_medications"] == []
-    assert "allergies" in dumped
-    assert "lab_results" in dumped
-    assert "imaging_results" in dumped
-    assert "assessment_plan" in dumped
+    # Optional list fields default to None, so they are excluded
+    assert "past_medical_history" not in dumped
+    assert "home_medications" not in dumped
+    assert "allergies" not in dumped
+    assert "lab_results" not in dumped
+    assert "imaging_results" not in dumped
+    assert "assessment_plan" not in dumped
+    # Explicit empty lists are included
+    note_with_empty_lists = DetailedClinicalNote(
+        chief_complaint="Pain",
+        past_medical_history=[],
+        home_medications=[],
+    )
+    dumped_with_lists = note_with_empty_lists.model_dump(exclude_none=True)
+    assert dumped_with_lists["past_medical_history"] == []
+    assert dumped_with_lists["home_medications"] == []
 
 
 def test_render_ready_omit_empty_lists():

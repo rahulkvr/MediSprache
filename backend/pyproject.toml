@@ -9,6 +9,7 @@ dependencies = [
     "google-adk>=1.26.0",
     "httpx>=0.28.1",
     "pydantic>=2.12.5",
+    "pytest>=9.0.2",
     "python-dotenv>=1.2.2",
 ]
 
