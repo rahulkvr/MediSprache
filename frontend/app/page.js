@@ -183,27 +183,7 @@ function Header() {
   );
 }
 
-function Footer() {
-  return (
-    <footer className="app-footer" role="contentinfo">
-      <div className="footer-content">
-        <div className="footer-info">
-          <span className="footer-item">
-            <Icons.Shield />
-            Audio processed locally
-          </span>
-          <span className="footer-item">
-            <Icons.Server />
-            German medical transcription
-          </span>
-        </div>
-        <span className="footer-badge">
-          v0.1.0
-        </span>
-      </div>
-    </footer>
-  );
-}
+
 
 function ErrorAlert({ message, onDismiss }) {
   return (
@@ -684,8 +664,6 @@ export default function HomePage() {
 
         {result && <ResultsSection result={result} onReset={handleReset} />}
       </main>
-      
-      <Footer />
     </div>
   );
 }
