@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 const ACCEPTED_TYPES = ".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav";
 const PROCESSING_STEPS = ["Uploading", "Transcribing", "Summarizing"];
@@ -280,11 +280,13 @@ function FileDropzone({ file, onFileChange, inputRef }) {
 function AudioPreview({ file }) {
   const [audioUrl, setAudioUrl] = useState(null);
 
-  useState(() => {
+  useEffect(() => {
     if (file) {
       const url = URL.createObjectURL(file);
       setAudioUrl(url);
       return () => URL.revokeObjectURL(url);
+    } else {
+      setAudioUrl(null);
     }
   }, [file]);
 
