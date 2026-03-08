@@ -100,6 +100,37 @@ function formatLabel(key) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function formatClipboardValue(value, depth = 0) {
+  const indent = "  ".repeat(depth);
+
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "-";
+    return value
+      .map((item) => `${indent}- ${formatClipboardValue(item, depth + 1).trimStart()}`)
+      .join("\n");
+  }
+
+  if (typeof value === "object") {
+    const entries = Object.entries(value).filter(
+      ([, itemValue]) => itemValue !== null && itemValue !== undefined && itemValue !== ""
+    );
+    if (entries.length === 0) return "-";
+    return entries
+      .map(([key, itemValue]) => `${indent}${formatLabel(key)}: ${formatClipboardValue(itemValue, depth + 1).trimStart()}`)
+      .join("\n");
+  }
+
+  return String(value);
+}
+
 // ============================================================================
 // Components
 // ============================================================================
@@ -366,7 +397,7 @@ function ClinicalSummary({ data, title }) {
   });
 
   const summaryText = sortedEntries
-    .map(([key, value]) => `${formatLabel(key)}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
+    .map(([key, value]) => `${formatLabel(key)}: ${formatClipboardValue(value, 1)}`)
     .join("\n\n");
 
   return (
@@ -454,7 +485,7 @@ export default function HomePage() {
       }
 
       const data = await res.json();
-      setResult(data);
+      setResult(data.summary);
       setActiveTab("notes");
     } catch (err) {
       setError(err.message || "An unexpected error occurred.");
