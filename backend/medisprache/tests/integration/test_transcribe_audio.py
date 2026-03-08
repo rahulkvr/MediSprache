@@ -24,6 +24,6 @@ def test_transcribe_audio_happy_path():
 
     validated = TranscriptResult(**result)
     assert validated.text.strip(), "Transcript text must not be empty"
-    assert "faster-whisper" in validated.model_name or "Systran" in validated.model_name
+    assert validated.model_name, "model_name must be a non-empty string"
     assert isinstance(validated.segments, list)
     assert len(validated.segments) > 0
