@@ -61,8 +61,7 @@ export async function POST(request) {
   try {
     const formData = await request.formData();
     const file = formData.get("file");
-    const MAX_NOTES_LENGTH = 500;
-    const notes = (formData.get("notes") || "").toString().trim().slice(0, MAX_NOTES_LENGTH);
+
 
     if (!(file instanceof File)) {
       return NextResponse.json(
@@ -84,13 +83,9 @@ export async function POST(request) {
     const sessionId = randomUUID();
     await createSession(userId, sessionId);
 
-    const prompt = [
-      "Transcribe the uploaded German medical dictation audio and return only JSON.",
-      "Use the uploaded artifact tool if needed.",
-      notes ? `Additional notes: ${notes}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const prompt =
+      "Transcribe the uploaded German medical dictation audio and return only JSON.\n" +
+      "Use the uploaded artifact tool if needed.";
 
     const runResponse = await fetch(`${DEFAULT_ADK_API_BASE}/run`, {
       method: "POST",
