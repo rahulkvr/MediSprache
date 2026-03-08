@@ -569,7 +569,7 @@ export default function HomePage() {
         }
 
         if (payload.type === "partial" && typeof payload.text === "string") {
-          setPartialText(payload.text);
+          setPartialText((prev) => prev + payload.text);
           return;
         }
 
