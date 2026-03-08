@@ -64,8 +64,7 @@ Notes:
 
 - On first startup, `ollama-init` pulls the configured Ollama model automatically.
 - The first transcription request can be slow because the Whisper model must be downloaded and cached.
-- The default LLM is `qwen3.5`, which is a newer and lighter open model for local agent workflows.
-- If you want a heavier fallback focused on agentic tasks and structured outputs, set `OLLAMA_MODEL=gpt-oss:20b`.
+- The default LLM is `qwen2.5:3b`, a lightweight model well-suited for local agent workflows and structured JSON output.
 
 ## Docker Services
 
@@ -97,9 +96,9 @@ The compose file supports these environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
-| `OLLAMA_MODEL` | `qwen3.5` | Ollama model name used for the ADK agent |
+| `OLLAMA_MODEL` | `qwen2.5:3b` | Ollama model name used for the ADK agent |
 | `OLLAMA_API_BASE` | `http://ollama:11434` | Ollama API base URL used inside the backend container |
-| `WHISPER_MODEL` | `leduckhai/MultiMed-ST` | Speech-to-text model for German medical dictation |
+| `WHISPER_MODEL` | `base` | faster-whisper model size; use `small` or `medium` on 16GB+ RAM |
 | `WHISPER_DEVICE` | `cpu` | Whisper runtime device, e.g. `cpu` or `cuda` |
 | `ADK_API_BASE` | `http://backend:8000` | Backend URL used by the frontend container |
 
@@ -165,7 +164,7 @@ If you run locally outside Docker, point the backend to your local Ollama daemon
 
 ```bash
 set OLLAMA_API_BASE=http://localhost:11434
-set OLLAMA_MODEL=qwen3.5
+set OLLAMA_MODEL=qwen2.5:3b
 ```
 
 ### Frontend locally

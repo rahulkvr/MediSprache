@@ -61,7 +61,8 @@ export async function POST(request) {
   try {
     const formData = await request.formData();
     const file = formData.get("file");
-    const notes = (formData.get("notes") || "").toString().trim();
+    const MAX_NOTES_LENGTH = 500;
+    const notes = (formData.get("notes") || "").toString().trim().slice(0, MAX_NOTES_LENGTH);
 
     if (!(file instanceof File)) {
       return NextResponse.json(
@@ -128,9 +129,13 @@ export async function POST(request) {
       throw new Error("The ADK backend did not return a final JSON response.");
     }
 
-    return NextResponse.json({
-      summary: JSON.parse(finalText),
-    });
+    let summary;
+    try {
+      summary = JSON.parse(finalText);
+    } catch {
+      throw new Error(`Backend returned non-JSON response: ${finalText}`);
+    }
+    return NextResponse.json({ summary });
   } catch (error) {
     return NextResponse.json(
       {
