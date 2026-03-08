@@ -379,6 +379,20 @@ body {
   min-height: 60px;
 }
 
+.anim-fade-in {
+  animation: fadeIn 0.3s ease;
+}
+
+.json-pre-block {
+  background-color: rgba(0, 0, 0, 0.03);
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  font-size: 0.875rem;
+  font-family: monospace;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
 .transcription-content,
 .notes-content {
   font-size: 0.9375rem;

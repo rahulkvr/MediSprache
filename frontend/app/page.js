@@ -102,6 +102,11 @@ function formatLabel(key) {
 
 function formatClipboardValue(value, depth = 0) {
   const indent = "  ".repeat(depth);
+  const formatMultilineValue = (text, continuationIndent) => {
+    const [firstLine, ...otherLines] = String(text).split("\n");
+    if (otherLines.length === 0) return firstLine;
+    return [firstLine, ...otherLines.map((line) => `${continuationIndent}${line}`)].join("\n");
+  };
 
   if (value === null || value === undefined || value === "") {
     return "-";
@@ -114,7 +119,10 @@ function formatClipboardValue(value, depth = 0) {
   if (Array.isArray(value)) {
     if (value.length === 0) return "-";
     return value
-      .map((item) => `${indent}- ${formatClipboardValue(item, depth + 1).trimStart()}`)
+      .map((item) => {
+        const formattedItem = formatClipboardValue(item, depth + 1);
+        return `${indent}- ${formatMultilineValue(formattedItem, `${indent}  `)}`;
+      })
       .join("\n");
   }
 
@@ -124,7 +132,10 @@ function formatClipboardValue(value, depth = 0) {
     );
     if (entries.length === 0) return "-";
     return entries
-      .map(([key, itemValue]) => `${indent}${formatLabel(key)}: ${formatClipboardValue(itemValue, depth + 1).trimStart()}`)
+      .map(([key, itemValue]) => {
+        const formattedValue = formatClipboardValue(itemValue, depth + 1);
+        return `${indent}${formatLabel(key)}: ${formatMultilineValue(formattedValue, `${indent}  `)}`;
+      })
       .join("\n");
   }
 
@@ -543,22 +554,14 @@ export default function HomePage() {
 
             <div className="tab-content">
               {activeTab === "summary" && (
-                <div className="summary-wrapper" style={{ animation: "fadeIn 0.3s ease" }}>
+                <div className="summary-wrapper anim-fade-in">
                   <ClinicalSummary data={result} title={getTitle()} />
                 </div>
               )}
               
               {activeTab === "json" && (
-                <div className="json-content" style={{ animation: "fadeIn 0.3s ease" }}>
-                  <pre style={{
-                    backgroundColor: "rgba(0, 0, 0, 0.03)",
-                    padding: "1.5rem",
-                    borderRadius: "0.5rem",
-                    overflowX: "auto",
-                    fontSize: "0.875rem",
-                    fontFamily: "monospace",
-                    border: "1px solid rgba(0, 0, 0, 0.05)"
-                  }}>
+                <div className="json-content anim-fade-in">
+                  <pre className="json-pre-block">
                     {JSON.stringify(result, null, 2)}
                   </pre>
                 </div>
