@@ -140,19 +140,19 @@ function TabNavigation({ activeTab, onTabChange }) {
     <nav className="tab-nav" role="tablist" aria-label="Content sections">
       <button
         role="tab"
-        aria-selected={activeTab === "transcription"}
-        className={`tab-btn ${activeTab === "transcription" ? "active" : ""}`}
-        onClick={() => onTabChange("transcription")}
+        aria-selected={activeTab === "summary"}
+        className={`tab-btn ${activeTab === "summary" ? "active" : ""}`}
+        onClick={() => onTabChange("summary")}
       >
-        Transkription
+        Zusammenfassung
       </button>
       <button
         role="tab"
-        aria-selected={activeTab === "notes"}
-        className={`tab-btn ${activeTab === "notes" ? "active" : ""}`}
-        onClick={() => onTabChange("notes")}
+        aria-selected={activeTab === "json"}
+        className={`tab-btn ${activeTab === "json" ? "active" : ""}`}
+        onClick={() => onTabChange("json")}
       >
-        Notiz
+        Rohes JSON
       </button>
     </nav>
   );
@@ -462,7 +462,7 @@ export default function HomePage() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [activeTab, setActiveTab] = useState("transcription");
+  const [activeTab, setActiveTab] = useState("summary");
   const [file, setFile] = useState(null);
 
   const handleSubmit = async ({ file }) => {
@@ -486,7 +486,7 @@ export default function HomePage() {
 
       const data = await res.json();
       setResult(data.summary);
-      setActiveTab("notes");
+      setActiveTab("summary");
     } catch (err) {
       setError(err.message || "An unexpected error occurred.");
     } finally {
@@ -498,7 +498,7 @@ export default function HomePage() {
     setResult(null);
     setFile(null);
     setError("");
-    setActiveTab("transcription");
+    setActiveTab("summary");
   };
 
   // Determine the title from result if available
@@ -539,24 +539,28 @@ export default function HomePage() {
           </div>
         ) : (
           <div className="result-view">
-            <ClinicalSummary data={result} title={getTitle()} />
-            
             <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} />
 
             <div className="tab-content">
-              {activeTab === "transcription" && (
-                <div className="transcription-content">
-                  <p className="text-muted">
-                    Rohtranskription wird in einer zukünftigen Version verfügbar sein.
-                  </p>
+              {activeTab === "summary" && (
+                <div className="summary-wrapper" style={{ animation: "fadeIn 0.3s ease" }}>
+                  <ClinicalSummary data={result} title={getTitle()} />
                 </div>
               )}
               
-              {activeTab === "notes" && (
-                <div className="notes-content">
-                  <p className="text-muted">
-                    Notizen bearbeiten wird in einer zukünftigen Version verfügbar sein.
-                  </p>
+              {activeTab === "json" && (
+                <div className="json-content" style={{ animation: "fadeIn 0.3s ease" }}>
+                  <pre style={{
+                    backgroundColor: "rgba(0, 0, 0, 0.03)",
+                    padding: "1.5rem",
+                    borderRadius: "0.5rem",
+                    overflowX: "auto",
+                    fontSize: "0.875rem",
+                    fontFamily: "monospace",
+                    border: "1px solid rgba(0, 0, 0, 0.05)"
+                  }}>
+                    {JSON.stringify(result, null, 2)}
+                  </pre>
                 </div>
               )}
             </div>
