@@ -46,9 +46,11 @@ const Icons = {
   ),
   Mic: () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
-      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-      <line x1="12" x2="12" y1="19" y2="22"/>
+      <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
+      <path d="M9 22c1.046.935 2.404 1.5 4 1.5s2.954-.565 4-1.5"/>
+      <line x1="9" x2="9" y1="9" x2="9" y2="5"/>
+      <line x1="12" x2="12" y1="9" x2="12" y2="2"/>
+      <line x1="15" x2="15" y1="9" x2="15" y2="5"/>
     </svg>
   ),
   Refresh: () => (

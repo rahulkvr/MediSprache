@@ -1,20 +1,25 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
-  /* Colors - minimal, professional palette */
+  /* Colors - professional medical palette */
+  --primary: #0369a1;
+  --primary-light: #06b6d4;
+  --primary-dark: #0c4a6e;
+  
   --text-primary: #1a1a1a;
   --text-secondary: #6b7280;
   --text-muted: #9ca3af;
   
   --bg-page: #ffffff;
-  --bg-subtle: #f9fafb;
-  --bg-hover: #f3f4f6;
+  --bg-subtle: #f0f9ff;
+  --bg-hover: #e0f2fe;
   
-  --border-color: #e5e7eb;
+  --border-color: #cffafe;
   --border-light: #f0f0f0;
   
-  --accent: #6b7f5c;
-  --accent-bg: #e8ede4;
+  --accent: #0d9488;
+  --accent-light: #ccfbf1;
+  --accent-bg: #f0fdfa;
   
   --error: #dc2626;
   --error-bg: #fef2f2;
@@ -120,8 +125,8 @@ body {
 }
 
 .file-dropzone.drag-active {
-  border-color: var(--accent);
-  background: var(--accent-bg);
+  border-color: var(--primary);
+  background: var(--bg-subtle);
 }
 
 .file-dropzone.disabled {
@@ -215,7 +220,7 @@ body {
   gap: 0.5rem;
   width: 100%;
   padding: 0.875rem 1.25rem;
-  background: var(--text-primary);
+  background: var(--primary);
   color: white;
   font-family: inherit;
   font-size: 0.9375rem;
@@ -227,11 +232,11 @@ body {
 }
 
 .btn-primary:hover {
-  background: #333;
+  background: var(--primary-dark);
 }
 
 .btn-primary:focus-visible {
-  outline: 2px solid var(--text-primary);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 
@@ -359,8 +364,8 @@ body {
 }
 
 .tab-btn.active {
-  background: var(--accent-bg);
-  color: var(--text-primary);
+  background: var(--accent-light);
+  color: var(--accent);
 }
 
 .tab-btn:focus-visible {
