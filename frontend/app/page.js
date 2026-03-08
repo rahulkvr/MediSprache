@@ -116,6 +116,14 @@ function formatStageLabel(stage) {
   return STAGE_LABELS[stage] || stage.replace(/_/g, " ");
 }
 
+function parseNdjsonLine(line) {
+  try {
+    return JSON.parse(line);
+  } catch (error) {
+    throw new Error(`Failed to parse NDJSON line: '${line}'`, { cause: error });
+  }
+}
+
 function formatClipboardValue(value, depth = 0) {
   const indent = "  ".repeat(depth);
   const formatMultilineValue = (text, continuationIndent) => {
@@ -617,11 +625,7 @@ export default function HomePage() {
           if (!line) {
             continue;
           }
-          try {
-            handleEvent(JSON.parse(line));
-          } catch {
-            // Ignore malformed NDJSON chunks from network fragmentation.
-          }
+          handleEvent(parseNdjsonLine(line));
         }
       };
 
@@ -637,11 +641,7 @@ export default function HomePage() {
       }
 
       if (streamBuffer.trim()) {
-        try {
-          handleEvent(JSON.parse(streamBuffer.trim()));
-        } catch {
-          // Ignore trailing malformed payload.
-        }
+        handleEvent(parseNdjsonLine(streamBuffer.trim()));
       }
 
       if (streamError) {

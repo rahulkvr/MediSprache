@@ -4,10 +4,14 @@ import { NextResponse } from "next/server";
 const APP_NAME = "medisprache";
 const DEFAULT_ADK_API_BASE = process.env.ADK_API_BASE || "http://backend:8000";
 const ALLOWED_EXTENSIONS = new Set([".mp3", ".wav"]);
+const MAX_AUDIO_BYTES = Number(process.env.MAX_AUDIO_UPLOAD_BYTES || 10 * 1024 * 1024);
+const RATE_LIMIT_WINDOW_MS = Number(process.env.TRANSCRIBE_RATE_LIMIT_WINDOW_MS || 60_000);
+const RATE_LIMIT_MAX_REQUESTS = Number(process.env.TRANSCRIBE_RATE_LIMIT_MAX_REQUESTS || 5);
 const TRANSCRIBE_TOOL_NAMES = new Set([
   "transcribe_audio",
   "transcribe_uploaded_artifact",
 ]);
+const ipRateLimitStore = new Map();
 
 export const runtime = "nodejs";
 
@@ -100,8 +104,11 @@ function parseSseDataFrame(frame) {
   }
   try {
     return JSON.parse(payload);
-  } catch {
-    return null;
+  } catch (error) {
+    throw new Error(
+      `Failed to parse ADK SSE data frame as JSON: '${payload}'`,
+      { cause: error },
+    );
   }
 }
 
@@ -115,6 +122,57 @@ function parseSummaryJson(text) {
   } catch {
     throw new Error(`Backend returned non-JSON response: ${text}`);
   }
+}
+
+function getClientIdentifier(request) {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const [first] = forwarded.split(",");
+    if (first?.trim()) {
+      return first.trim();
+    }
+  }
+  const realIp = request.headers.get("x-real-ip");
+  if (realIp?.trim()) {
+    return realIp.trim();
+  }
+  return "unknown";
+}
+
+function isRateLimited(clientId, now = Date.now()) {
+  if (ipRateLimitStore.size > 10_000) {
+    for (const [key, value] of ipRateLimitStore.entries()) {
+      if (now >= value.resetAt) {
+        ipRateLimitStore.delete(key);
+      }
+    }
+  }
+
+  const existing = ipRateLimitStore.get(clientId);
+  if (!existing || now >= existing.resetAt) {
+    ipRateLimitStore.set(clientId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+
+  if (existing.count >= RATE_LIMIT_MAX_REQUESTS) {
+    return true;
+  }
+
+  existing.count += 1;
+  return false;
+}
+
+function toSafeClientMessage(error) {
+  if (!(error instanceof Error)) {
+    return "Beim Verarbeiten ist ein unerwarteter Fehler aufgetreten.";
+  }
+  if (error.message.includes("final JSON response")) {
+    return "Die Verarbeitung wurde beendet, aber es liegt kein Endergebnis vor.";
+  }
+  if (error.message.includes("non-JSON response")) {
+    return "Das Ergebnisformat vom Backend war ungueltig.";
+  }
+  return "Die Verarbeitung ist fehlgeschlagen. Bitte erneut versuchen.";
 }
 
 export async function POST(request) {
@@ -136,6 +194,28 @@ export async function POST(request) {
     );
   }
 
+  if (file.size <= 0) {
+    return NextResponse.json(
+      { error: "Die Audiodatei ist leer." },
+      { status: 400 },
+    );
+  }
+
+  if (file.size > MAX_AUDIO_BYTES) {
+    return NextResponse.json(
+      { error: `Datei zu gross. Maximale Groesse: ${Math.floor(MAX_AUDIO_BYTES / (1024 * 1024))} MB.` },
+      { status: 413 },
+    );
+  }
+
+  const clientId = getClientIdentifier(request);
+  if (isRateLimited(clientId)) {
+    return NextResponse.json(
+      { error: "Zu viele Anfragen. Bitte kurz warten und erneut versuchen." },
+      { status: 429 },
+    );
+  }
+
   const userId = randomUUID();
   const sessionId = randomUUID();
   const audioBytes = Buffer.from(await file.arrayBuffer());
@@ -148,15 +228,17 @@ export async function POST(request) {
       };
 
       const pushStage = (state, stage, message) => {
-        if (state.currentStage === stage) {
+        if (state.currentStage === stage && state.currentMessage === message) {
           return;
         }
         state.currentStage = stage;
+        state.currentMessage = message;
         send({ type: "stage", stage, message });
       };
 
       const stageState = {
         currentStage: "",
+        currentMessage: "",
         transcribeStarted: false,
         transcriptionDone: false,
         summarizing: false,
@@ -230,7 +312,7 @@ export async function POST(request) {
             break;
           }
 
-          sseBuffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+          sseBuffer += decoder.decode(value, { stream: true }).replace(/\r\n|\r/g, "\n");
           const { frames, remaining } = parseSseFrames(sseBuffer);
           sseBuffer = remaining;
 
@@ -303,12 +385,10 @@ export async function POST(request) {
         pushStage(stageState, "completed", "Fertig.");
         send({ type: "result", summary });
       } catch (error) {
+        console.error("Transcription stream failed:", error);
         send({
           type: "error",
-          error:
-            error instanceof Error
-              ? error.message
-              : "Unexpected frontend API stream error.",
+          error: toSafeClientMessage(error),
         });
       } finally {
         controller.close();
