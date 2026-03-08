@@ -64,7 +64,7 @@ Notes:
 
 - On first startup, `ollama-init` pulls the configured Ollama model automatically.
 - The first transcription request can be slow because the Whisper model must be downloaded and cached.
-- The default LLM is `qwen2.5:3b`, a lightweight model well-suited for local agent workflows and structured JSON output.
+- The default LLM is `qwen2.5:1.5b`, a lightweight model well-suited for local agent workflows and structured JSON output.
 
 ## Docker Services
 
@@ -96,7 +96,7 @@ The compose file supports these environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
-| `OLLAMA_MODEL` | `qwen2.5:3b` | Ollama model name used for the ADK agent |
+| `OLLAMA_MODEL` | `qwen2.5:1.5b` | Ollama model name used for the ADK agent |
 | `OLLAMA_API_BASE` | `http://ollama:11434` | Ollama API base URL used inside the backend container |
 | `WHISPER_MODEL` | `base` | faster-whisper model size; use `small` or `medium` on 16GB+ RAM |
 | `WHISPER_DEVICE` | `cpu` | Whisper runtime device, e.g. `cpu` or `cuda` |
@@ -129,7 +129,7 @@ Use the interactive ADK CLI to chat with the agent (transcribe/summarize flows w
 cd backend
 # Ensure Ollama is running (e.g. Docker: docker compose up -d ollama)
 set OLLAMA_API_BASE=http://localhost:11434
-set OLLAMA_MODEL=qwen2.5:3b
+set OLLAMA_MODEL=qwen2.5:1.5b
 uv run adk run medisprache
 ```
 
@@ -154,7 +154,7 @@ Run the ADK web UI (dev-only, not for production) to chat with the agent in the 
 ```bash
 cd backend
 set OLLAMA_API_BASE=http://localhost:11434
-set OLLAMA_MODEL=qwen2.5:3b
+set OLLAMA_MODEL=qwen2.5:1.5b
 uv run adk web --port 8000
 ```
 
@@ -164,7 +164,7 @@ If you run locally outside Docker, point the backend to your local Ollama daemon
 
 ```bash
 set OLLAMA_API_BASE=http://localhost:11434
-set OLLAMA_MODEL=qwen2.5:3b
+set OLLAMA_MODEL=qwen2.5:1.5b
 ```
 
 ### Frontend locally

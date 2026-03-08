@@ -19,10 +19,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY . .
 
-# Pre-download Whisper model at build time to avoid runtime download
+# Pre-download the configured Whisper model at build time.
+# Pass WHISPER_MODEL as a build arg so the warmed cache matches runtime.
 ARG WHISPER_MODEL=base
 RUN --mount=type=cache,target=/root/.cache/huggingface \
-    uv run python -c "from faster_whisper import WhisperModel; WhisperModel('${WHISPER_MODEL}', device='cpu', compute_type='int8')"
+    WHISPER_MODEL="${WHISPER_MODEL}" uv run python -c "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ['WHISPER_MODEL'], device='cpu', compute_type='int8')"
 
 EXPOSE 8000
 

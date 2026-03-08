@@ -32,7 +32,11 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        WHISPER_MODEL: ${WHISPER_MODEL:-base}
     depends_on:
+      ollama-init:
+        condition: service_completed_successfully
       ollama:
         condition: service_healthy
     environment:

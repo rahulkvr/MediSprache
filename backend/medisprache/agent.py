@@ -16,7 +16,7 @@ from medisprache.tools.transcribe_audio import (
 )
 
 APP_NAME = "medisprache"
-DEFAULT_OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
+DEFAULT_OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
 DEFAULT_OLLAMA_API_BASE = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
 SUMMARY_SCHEMA = json.dumps(
     CompactClinicalSummary.model_json_schema(),

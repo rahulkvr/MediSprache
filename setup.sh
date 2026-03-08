@@ -24,7 +24,14 @@ PID_PULL=$!
 docker compose build &
 PID_BUILD=$!
 
-wait $PID_PULL && echo "  ✓ Image pulls complete" || echo "  ✗ Image pull failed"
+if wait $PID_PULL; then
+  echo "  ✓ Image pulls complete"
+else
+  echo "  ✗ Image pull failed"
+  kill $PID_BUILD 2>/dev/null || true
+  wait $PID_BUILD 2>/dev/null || true
+  exit 1
+fi
 wait $PID_BUILD && echo "  ✓ Builds complete" || { echo "  ✗ Build failed"; exit 1; }
 
 # ── Step 2: Pre-pull the Ollama model ──
