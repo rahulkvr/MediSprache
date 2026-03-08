@@ -45,7 +45,10 @@ html {
 
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background-color: var(--bg-page);
+  background-color: var(--bg-subtle);
+  background-image: 
+    radial-gradient(circle at 100% 0%, rgba(15, 118, 110, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 0% 100%, rgba(15, 118, 110, 0.03) 0%, transparent 50%);
   color: var(--text-primary);
   min-height: 100vh;
   line-height: 1.6;
@@ -73,23 +76,29 @@ body {
 /* Layout */
 .app-container {
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .main-content {
-  max-width: 800px;
+  max-width: 880px;
+  width: 100%;
   margin: 0 auto;
-  padding: 3rem 1.5rem 4rem;
+  padding: 2rem 1rem 3rem;
+  flex: 1;
 }
 
 @media (min-width: 640px) {
   .main-content {
-    padding: 4rem 2rem 5rem;
+    padding: 3rem 2rem 4rem;
   }
 }
 
 /* Page header */
 .page-header {
   margin-bottom: 2.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .page-title {
@@ -98,43 +107,60 @@ body {
   color: var(--text-primary);
   letter-spacing: -0.03em;
   line-height: 1.2;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.page-title::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 32px;
+  background: var(--primary);
+  border-radius: 4px;
 }
 
 .page-subtitle {
   font-size: 1rem;
   color: var(--primary);
-  margin-top: 0.5rem;
+  margin-top: 0.625rem;
+  margin-left: 1.5rem;
   font-weight: 500;
 }
 
 /* Upload view */
 .upload-view {
-  max-width: 520px;
+  max-width: 560px;
+  background: var(--bg-card);
+  border-radius: 20px;
+  padding: 2rem;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-color);
 }
 
 /* File dropzone */
 .file-dropzone {
   border: 2px dashed var(--border-color);
   border-radius: 16px;
-  padding: 3rem 2rem;
+  padding: 2.5rem 1.5rem;
   text-align: center;
   cursor: pointer;
   transition: all 0.2s ease;
-  background: var(--bg-subtle);
-  box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.02);
+  background: linear-gradient(135deg, var(--bg-subtle) 0%, var(--bg-page) 100%);
 }
 
 .file-dropzone:hover,
 .file-dropzone:focus-within {
   border-color: var(--primary);
   background: var(--accent-bg);
-  box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.03);
 }
 
 .file-dropzone.drag-active {
   border-color: var(--primary);
   background: var(--accent-bg);
   border-style: solid;
+  transform: scale(1.01);
 }
 
 .file-dropzone.disabled {
@@ -160,9 +186,10 @@ body {
 }
 
 .icon-upload {
-  width: 36px;
-  height: 36px;
-  color: var(--text-muted);
+  width: 40px;
+  height: 40px;
+  color: var(--primary);
+  opacity: 0.7;
 }
 
 .dropzone-text {
@@ -450,6 +477,11 @@ body {
 /* Result view */
 .result-view {
   max-width: 100%;
+  background: var(--bg-card);
+  border-radius: 20px;
+  padding: 2.5rem;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-color);
 }
 
 /* Summary container */
@@ -466,11 +498,24 @@ body {
 }
 
 .summary-title {
-  font-size: 2rem;
+  font-size: 1.75rem;
   font-weight: 700;
-  color: var(--primary-dark);
+  color: var(--text-primary);
   letter-spacing: -0.02em;
-  line-height: 1.2;
+  line-height: 1.3;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.summary-title::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 28px;
+  background: var(--primary);
+  border-radius: 3px;
+  flex-shrink: 0;
 }
 
 /* Summary table - like reference design */
@@ -582,15 +627,46 @@ body {
 }
 
 /* Responsive */
+@media (max-width: 640px) {
+  .upload-view,
+  .result-view {
+    border-radius: 16px;
+    padding: 1.5rem;
+  }
+  
+  .page-header {
+    padding-bottom: 1rem;
+  }
+}
+
 @media (max-width: 480px) {
-  .page-title,
+  .page-title {
+    font-size: 1.625rem;
+  }
+  
+  .page-title::before {
+    width: 6px;
+    height: 26px;
+  }
+  
   .summary-title {
-    font-size: 1.75rem;
+    font-size: 1.375rem;
+  }
+  
+  .summary-title::before {
+    width: 5px;
+    height: 22px;
   }
   
   .summary-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.75rem;
+  }
+  
+  .upload-view,
+  .result-view {
+    padding: 1.25rem;
+    border-radius: 12px;
   }
 }
