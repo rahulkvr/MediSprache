@@ -687,25 +687,32 @@ export default function HomePage() {
       <main id="main" className="main-content">
         {error && <ErrorAlert message={error} />}
 
-        {!result ? (
-          <div className="upload-view">
-            <header className="page-header">
-              <h1 className="page-title">MediSprache</h1>
-              <p className="page-subtitle">Medizinische Diktat-Transkription</p>
-            </header>
+        <div className="upload-view">
+          <header className="page-header">
+            <h1 className="page-title">MediSprache</h1>
+            <p className="page-subtitle">Medizinische Diktat-Transkription</p>
+          </header>
 
-            <UploadSection
-              onSubmit={handleSubmit}
-              isSubmitting={isSubmitting}
-              file={file}
-              setFile={setFile}
-              stage={stage}
-              stageHistory={stageHistory}
-              partialText={partialText}
-            />
-          </div>
-        ) : (
-          <div className="result-view">
+          <UploadSection
+            onSubmit={handleSubmit}
+            isSubmitting={isSubmitting}
+            file={file}
+            setFile={(newFile) => {
+              setFile(newFile);
+              // Clear previous results when selecting a new file
+              if (result && newFile) {
+                setResult(null);
+                setPartialText("");
+              }
+            }}
+            stage={stage}
+            stageHistory={stageHistory}
+            partialText={partialText}
+          />
+        </div>
+
+        {result && (
+          <div className="result-view anim-slide-up" style={{ marginTop: '3rem' }}>
             <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} />
 
             <div className="tab-content">
@@ -727,7 +734,7 @@ export default function HomePage() {
             <div className="result-actions">
               <button onClick={handleReset} className="btn-secondary">
                 <Icons.Refresh />
-                Neues Diktat
+                Ergebnisse löschen
               </button>
             </div>
           </div>
