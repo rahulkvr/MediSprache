@@ -5,15 +5,33 @@ const APP_NAME = "medisprache";
 const DEFAULT_ADK_API_BASE = process.env.ADK_API_BASE || "http://backend:8000";
 const ALLOWED_EXTENSIONS = new Set([".mp3", ".wav"]);
 const MAX_AUDIO_BYTES = Number(process.env.MAX_AUDIO_UPLOAD_BYTES || 10 * 1024 * 1024);
-const RATE_LIMIT_WINDOW_MS = Number(process.env.TRANSCRIBE_RATE_LIMIT_WINDOW_MS || 60_000);
-const RATE_LIMIT_MAX_REQUESTS = Number(process.env.TRANSCRIBE_RATE_LIMIT_MAX_REQUESTS || 5);
+const MAX_REQUEST_BYTES = Number(
+  process.env.MAX_TRANSCRIBE_REQUEST_BYTES || MAX_AUDIO_BYTES + 1024 * 1024,
+);
+const MAX_CONCURRENT_TRANSCRIPTIONS = Number(
+  process.env.MAX_CONCURRENT_TRANSCRIPTIONS || 2,
+);
 const TRANSCRIBE_TOOL_NAMES = new Set([
   "transcribe_audio",
   "transcribe_uploaded_artifact",
 ]);
-const ipRateLimitStore = new Map();
+let activeTranscriptionCount = 0;
 
 export const runtime = "nodejs";
+
+class MissingFinalResponseError extends Error {
+  constructor() {
+    super("The ADK backend did not return a final JSON response.");
+    this.name = "MissingFinalResponseError";
+  }
+}
+
+class InvalidBackendResponseError extends Error {
+  constructor(message = "Backend returned non-JSON response.") {
+    super(message);
+    this.name = "InvalidBackendResponseError";
+  }
+}
 
 function getExtension(filename) {
   const idx = filename.lastIndexOf(".");
@@ -52,8 +70,7 @@ async function createSession(userId, sessionId) {
     return;
   }
 
-  const text = await response.text();
-  throw new Error(`Failed to create ADK session: ${text}`);
+  throw new Error(`Failed to create ADK session (${response.status}).`);
 }
 
 function buildNdjsonEvent(encoder, payload) {
@@ -105,127 +122,126 @@ function parseSseDataFrame(frame) {
   try {
     return JSON.parse(payload);
   } catch (error) {
-    throw new Error(
-      `Failed to parse ADK SSE data frame as JSON: '${payload}'`,
-      { cause: error },
-    );
+    throw new Error("Failed to parse ADK SSE data frame as JSON.", { cause: error });
   }
 }
 
 function parseSummaryJson(text) {
   if (!text) {
-    throw new Error("The ADK backend did not return a final JSON response.");
+    throw new MissingFinalResponseError();
   }
 
   try {
     return JSON.parse(text);
   } catch {
-    throw new Error(`Backend returned non-JSON response: ${text}`);
+    throw new InvalidBackendResponseError();
   }
 }
 
-function getClientIdentifier(request) {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) {
-    const [first] = forwarded.split(",");
-    if (first?.trim()) {
-      return first.trim();
-    }
+function parseContentLength(request) {
+  const headerValue = request.headers.get("content-length");
+  if (!headerValue) {
+    return null;
   }
-  const realIp = request.headers.get("x-real-ip");
-  if (realIp?.trim()) {
-    return realIp.trim();
-  }
-  return "unknown";
+  const value = Number(headerValue);
+  return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-function isRateLimited(clientId, now = Date.now()) {
-  if (ipRateLimitStore.size > 10_000) {
-    for (const [key, value] of ipRateLimitStore.entries()) {
-      if (now >= value.resetAt) {
-        ipRateLimitStore.delete(key);
-      }
-    }
-  }
-
-  const existing = ipRateLimitStore.get(clientId);
-  if (!existing || now >= existing.resetAt) {
-    ipRateLimitStore.set(clientId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+function tryAcquireTranscriptionSlot() {
+  if (activeTranscriptionCount >= MAX_CONCURRENT_TRANSCRIPTIONS) {
     return false;
   }
+  activeTranscriptionCount += 1;
+  return true;
+}
 
-  if (existing.count >= RATE_LIMIT_MAX_REQUESTS) {
-    return true;
+function releaseTranscriptionSlot() {
+  if (activeTranscriptionCount > 0) {
+    activeTranscriptionCount -= 1;
   }
-
-  existing.count += 1;
-  return false;
 }
 
 function toSafeClientMessage(error) {
-  if (!(error instanceof Error)) {
-    return "Beim Verarbeiten ist ein unerwarteter Fehler aufgetreten.";
-  }
-  if (error.message.includes("final JSON response")) {
+  if (error instanceof MissingFinalResponseError) {
     return "Die Verarbeitung wurde beendet, aber es liegt kein Endergebnis vor.";
   }
-  if (error.message.includes("non-JSON response")) {
+  if (error instanceof InvalidBackendResponseError) {
     return "Das Ergebnisformat vom Backend war ungueltig.";
   }
   return "Die Verarbeitung ist fehlgeschlagen. Bitte erneut versuchen.";
 }
 
 export async function POST(request) {
-  const formData = await request.formData();
-  const file = formData.get("file");
-
-  if (!(file instanceof File)) {
-    return NextResponse.json(
-      { error: "No audio file was provided." },
-      { status: 400 },
-    );
-  }
-
-  const extension = getExtension(file.name);
-  if (!ALLOWED_EXTENSIONS.has(extension)) {
-    return NextResponse.json(
-      { error: "Only MP3 and WAV files are supported." },
-      { status: 400 },
-    );
-  }
-
-  if (file.size <= 0) {
-    return NextResponse.json(
-      { error: "Die Audiodatei ist leer." },
-      { status: 400 },
-    );
-  }
-
-  if (file.size > MAX_AUDIO_BYTES) {
+  const contentLength = parseContentLength(request);
+  if (contentLength !== null && contentLength > MAX_REQUEST_BYTES) {
     return NextResponse.json(
       { error: `Datei zu gross. Maximale Groesse: ${Math.floor(MAX_AUDIO_BYTES / (1024 * 1024))} MB.` },
       { status: 413 },
     );
   }
 
-  const clientId = getClientIdentifier(request);
-  if (isRateLimited(clientId)) {
+  if (!tryAcquireTranscriptionSlot()) {
     return NextResponse.json(
-      { error: "Zu viele Anfragen. Bitte kurz warten und erneut versuchen." },
+      { error: "Server ist ausgelastet. Bitte kurz warten und erneut versuchen." },
       { status: 429 },
     );
   }
 
-  const userId = randomUUID();
-  const sessionId = randomUUID();
-  const audioBytes = Buffer.from(await file.arrayBuffer());
-  const encoder = new TextEncoder();
+  let slotReleased = false;
+  const releaseSlot = () => {
+    if (!slotReleased) {
+      slotReleased = true;
+      releaseTranscriptionSlot();
+    }
+  };
 
-  const responseStream = new ReadableStream({
-    async start(controller) {
-      const send = (payload) => {
-        controller.enqueue(buildNdjsonEvent(encoder, payload));
-      };
+  try {
+    const formData = await request.formData();
+    const file = formData.get("file");
+
+    if (!(file instanceof File)) {
+      releaseSlot();
+      return NextResponse.json(
+        { error: "No audio file was provided." },
+        { status: 400 },
+      );
+    }
+
+    const extension = getExtension(file.name);
+    if (!ALLOWED_EXTENSIONS.has(extension)) {
+      releaseSlot();
+      return NextResponse.json(
+        { error: "Only MP3 and WAV files are supported." },
+        { status: 400 },
+      );
+    }
+
+    if (file.size <= 0) {
+      releaseSlot();
+      return NextResponse.json(
+        { error: "Die Audiodatei ist leer." },
+        { status: 400 },
+      );
+    }
+
+    if (file.size > MAX_AUDIO_BYTES) {
+      releaseSlot();
+      return NextResponse.json(
+        { error: `Datei zu gross. Maximale Groesse: ${Math.floor(MAX_AUDIO_BYTES / (1024 * 1024))} MB.` },
+        { status: 413 },
+      );
+    }
+
+    const userId = randomUUID();
+    const sessionId = randomUUID();
+    const audioBytes = Buffer.from(await file.arrayBuffer());
+    const encoder = new TextEncoder();
+
+    const responseStream = new ReadableStream({
+      async start(controller) {
+        const send = (payload) => {
+          controller.enqueue(buildNdjsonEvent(encoder, payload));
+        };
 
       const pushStage = (state, stage, message) => {
         if (state.currentStage === stage && state.currentMessage === message) {
@@ -264,37 +280,36 @@ export async function POST(request) {
           "Transcribe the uploaded German medical dictation audio and return only JSON.\n" +
           "Use the uploaded artifact tool if needed.";
 
-        const runResponse = await fetch(`${DEFAULT_ADK_API_BASE}/run_sse`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            appName: APP_NAME,
-            userId,
-            sessionId,
-            streaming: true,
-            newMessage: {
-              role: "user",
-              parts: [
-                { text: prompt },
-                {
-                  inlineData: {
-                    displayName: file.name,
-                    mimeType: inferMimeType(file.name, file.type),
-                    data: audioBytes.toString("base64"),
-                  },
-                },
-              ],
+          const runResponse = await fetch(`${DEFAULT_ADK_API_BASE}/run_sse`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
             },
-          }),
-          cache: "no-store",
-        });
+            body: JSON.stringify({
+              appName: APP_NAME,
+              userId,
+              sessionId,
+              streaming: true,
+              newMessage: {
+                role: "user",
+                parts: [
+                  { text: prompt },
+                  {
+                    inlineData: {
+                      displayName: file.name,
+                      mimeType: inferMimeType(file.name, file.type),
+                      data: audioBytes.toString("base64"),
+                    },
+                  },
+                ],
+              },
+            }),
+            cache: "no-store",
+          });
 
-        if (!runResponse.ok) {
-          const text = await runResponse.text();
-          throw new Error(`ADK run_sse failed: ${text}`);
-        }
+          if (!runResponse.ok) {
+            throw new Error(`ADK run_sse failed with status ${runResponse.status}.`);
+          }
 
         if (!runResponse.body) {
           throw new Error("ADK run_sse returned an empty response body.");
@@ -384,25 +399,40 @@ export async function POST(request) {
         const summary = parseSummaryJson(stageState.latestText);
         pushStage(stageState, "completed", "Fertig.");
         send({ type: "result", summary });
-      } catch (error) {
-        console.error("Transcription stream failed:", error);
-        send({
-          type: "error",
-          error: toSafeClientMessage(error),
-        });
-      } finally {
-        controller.close();
-      }
-    },
-  });
+        } catch (error) {
+          console.error(
+            "Transcription stream failed:",
+            error instanceof Error ? error.message : error,
+          );
+          send({
+            type: "error",
+            error: toSafeClientMessage(error),
+          });
+        } finally {
+          releaseSlot();
+          controller.close();
+        }
+      },
+    });
 
-  return new Response(responseStream, {
-    headers: {
-      "Content-Type": "application/x-ndjson; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-    },
-  });
+    return new Response(responseStream, {
+      headers: {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+      },
+    });
+  } catch (error) {
+    releaseSlot();
+    console.error(
+      "Failed to prepare transcription request:",
+      error instanceof Error ? error.message : error,
+    );
+    return NextResponse.json(
+      { error: "Die Anfrage konnte nicht verarbeitet werden." },
+      { status: 400 },
+    );
+  }
 }
 
 export const dynamic = "force-dynamic";

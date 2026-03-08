@@ -587,16 +587,7 @@ export default function HomePage() {
           const nextStage = payload.stage || "";
           const nextMessage = payload.message || "";
           setStage(nextStage);
-          setStageHistory((prev) => {
-            if (
-              prev.length > 0 &&
-              prev[prev.length - 1].stage === nextStage &&
-              prev[prev.length - 1].message === nextMessage
-            ) {
-              return prev;
-            }
-            return [...prev, { stage: nextStage, message: nextMessage }];
-          });
+          setStageHistory((prev) => [...prev, { stage: nextStage, message: nextMessage }]);
           return;
         }
 
