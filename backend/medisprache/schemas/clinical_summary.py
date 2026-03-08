@@ -1,15 +1,9 @@
 from __future__ import annotations
 
 from typing import List, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
-
-class StrictBaseModel(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        str_strip_whitespace=True,
-        validate_assignment=True,
-    )
+from medisprache.schemas.base import StrictBaseModel
 
 
 class CompactClinicalSummary(StrictBaseModel):
@@ -47,12 +41,7 @@ class ReviewOfSystems(StrictBaseModel):
     hematologic_lymphatic: Optional[str] = None
     allergic_immunologic: Optional[str] = None
 
-    model_config = ConfigDict(
-        extra="forbid",
-        str_strip_whitespace=True,
-        validate_assignment=True,
-        populate_by_name=True,
-    )
+    model_config = ConfigDict(**StrictBaseModel.model_config, populate_by_name=True)
 
 
 class VitalSigns(StrictBaseModel):

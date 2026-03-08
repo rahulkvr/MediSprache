@@ -11,7 +11,7 @@ from google.adk.plugins.save_files_as_artifacts_plugin import SaveFilesAsArtifac
 from medisprache.plugins import OllamaToolCallBridgePlugin
 from medisprache.schemas.clinical_summary import CompactClinicalSummary
 from medisprache.tools.transcribe_audio import (
-    transcribe_audio_file,
+    transcribe_audio,
     transcribe_uploaded_artifact,
 )
 
@@ -44,7 +44,7 @@ Your job is to:
 3. Return only valid JSON.
 
 Tool usage rules:
-- If the user references a server-local audio path, call `transcribe_audio_file`.
+- If the user references a server-local audio path, call `transcribe_audio`.
 - If the user uploaded an audio attachment or artifact, call `transcribe_uploaded_artifact`.
 - Do not ask the user for the transcript first; use the tools.
 
@@ -58,7 +58,7 @@ Output rules:
 Required JSON schema:
 {SUMMARY_SCHEMA}
 """.strip(),
-    tools=[transcribe_audio_file, transcribe_uploaded_artifact],
+    tools=[transcribe_audio, transcribe_uploaded_artifact],
 )
 
 app = App(
@@ -67,7 +67,7 @@ app = App(
     plugins=[
         SaveFilesAsArtifactsPlugin(),
         OllamaToolCallBridgePlugin(
-            allowed_tool_names={"transcribe_audio_file", "transcribe_uploaded_artifact"}
+            allowed_tool_names={"transcribe_audio", "transcribe_uploaded_artifact"}
         ),
     ],
 )

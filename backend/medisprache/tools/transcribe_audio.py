@@ -38,9 +38,9 @@ def _normalize_model_name(model_name: str) -> str:
     candidate = model_name.strip()
     if candidate in _VALID_WHISPER_MODELS:
         return candidate
-    # Allow HuggingFace path that ends with a known size.
+    # Allow HuggingFace-style paths that end with a known size (e.g. "Systran/faster-whisper-base").
     for valid in _VALID_WHISPER_MODELS:
-        if candidate == valid or candidate.endswith("/" + valid):
+        if candidate.endswith("/" + valid):
             return candidate
     return _DEFAULT_MODEL
 
@@ -56,8 +56,11 @@ def _normalize_device(device: str) -> str:
 
 
 def _get_model(model_name: str, device: str) -> WhisperModel:
-    """Return a cached WhisperModel, loading on first call."""
-    model_name = _normalize_model_name(model_name)
+    """Return a cached WhisperModel, loading on first call.
+
+    Callers must pass already-normalised model_name and device values
+    (use _normalize_model_name / _normalize_device before calling).
+    """
     key = f"{model_name}:{device}"
     if key not in _model_cache:
         compute_type = "int8" if device == "cpu" else "float16"
@@ -149,10 +152,13 @@ def transcribe_audio(
     language: str | None = "de",
     beam_size: int = _DEFAULT_BEAM_SIZE,
 ) -> dict[str, object]:
-    """Transcribe *audio_path* and return a dict matching ``TranscriptResult``.
+    """Transcribe a server-local German medical dictation file.
 
-    Uses faster-whisper (CTranslate2), so no PyTorch is needed.
-    Defaults to Systran/faster-whisper-small with German language forcing.
+    Use this tool when the user gives a filesystem path that exists inside the
+    backend container or local backend environment.
+
+    Uses faster-whisper (CTranslate2) — no PyTorch required. Defaults to the
+    ``WHISPER_MODEL`` env var (``"base"`` if unset) with German language forcing.
     """
     result = _transcribe_path(
         Path(audio_path),
@@ -162,28 +168,6 @@ def transcribe_audio(
         beam_size=beam_size,
     )
     return result.model_dump()
-
-
-def transcribe_audio_file(
-    audio_path: str,
-    *,
-    model_name: str = _DEFAULT_MODEL,
-    device: str = _DEFAULT_DEVICE,
-    language: str | None = "de",
-    beam_size: int = _DEFAULT_BEAM_SIZE,
-) -> dict[str, object]:
-    """Transcribe a server-local German medical dictation file.
-
-    Use this tool when the user gives a filesystem path that exists inside the
-    backend container or local backend environment.
-    """
-    return transcribe_audio(
-        audio_path,
-        model_name=model_name,
-        device=device,
-        language=language,
-        beam_size=beam_size,
-    )
 
 
 async def transcribe_uploaded_artifact(

@@ -1,3 +1,4 @@
+from .base import StrictBaseModel
 from .clinical_summary import (
     Allergy,
     AssessmentPlanItem,
@@ -23,6 +24,7 @@ __all__ = [
     "Medication",
     "PhysicalExam",
     "ReviewOfSystems",
+    "StrictBaseModel",
     "StructuredClinicalOutput",
     "TranscriptResult",
     "TranscriptSegment",

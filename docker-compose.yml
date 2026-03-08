@@ -24,7 +24,7 @@ services:
     entrypoint:
       - /bin/sh
       - -c
-      - ollama pull "$${OLLAMA_MODEL:-qwen2.5:3b}"
+      - ollama pull "$$OLLAMA_MODEL"
     restart: "no"
 
   backend:

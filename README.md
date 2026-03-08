@@ -122,6 +122,45 @@ cd backend
 uv run adk api_server --host 0.0.0.0 --port 8000
 ```
 
+### Testing the CLI with `adk run`
+
+Use the interactive ADK CLI to chat with the agent (transcribe/summarize flows work when you refer to local files or uploads):
+
+```bash
+cd backend
+# Ensure Ollama is running (e.g. Docker: docker compose up -d ollama)
+set OLLAMA_API_BASE=http://localhost:11434
+set OLLAMA_MODEL=qwen2.5:3b
+uv run adk run medisprache
+```
+
+From the prompt you can type things like:
+
+- *Transcribe and summarize the audio at `C:\path\to\file.mp3`.* (uses server-local tool if path is on the same machine)
+- Or use the session to upload artifacts and ask the agent to transcribe them.
+
+Use `exit` to quit. Optional flags:
+
+- `--save_session` — save session to `.session.json` on exit
+- `--session_id my_session` — session ID when saving
+- `--resume medisprache/my_session.session.json` — resume a saved session
+- `--replay input.json` — run queries from a JSON file (non-interactive)
+- `--session_service_uri memory://` — use in-memory session (default when not using `--use_local_storage`)
+- `--artifact_service_uri memory://` — use in-memory artifacts
+
+### Testing with `adk web`
+
+Run the ADK web UI (dev-only, not for production) to chat with the agent in the browser:
+
+```bash
+cd backend
+set OLLAMA_API_BASE=http://localhost:11434
+set OLLAMA_MODEL=qwen2.5:3b
+uv run adk web --port 8000
+```
+
+Open [http://localhost:8000](http://localhost:8000), pick the agent in the UI, and send messages. Use a different port if 8000 is already in use (e.g. `--port 8080`).
+
 If you run locally outside Docker, point the backend to your local Ollama daemon:
 
 ```bash
