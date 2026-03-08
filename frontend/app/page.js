@@ -1,64 +1,173 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 const ACCEPTED_TYPES = ".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav";
 
-const UploadIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="file-icon">
-    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-    <polyline points="17 8 12 3 7 8" />
-    <line x1="12" y1="3" x2="12" y2="15" />
-  </svg>
-);
+// ============================================================================
+// Icons (inline SVGs)
+// ============================================================================
 
-const FileAudioIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M17.5 22h.5c.5 0 1-.2 1.4-.6.4-.4.6-.9.6-1.4V7.5L14.5 2H6c-.5 0-1 .2-1.4.6C4.2 3 4 3.5 4 4v3" />
-    <polyline points="14 2 14 8 20 8" />
-    <path d="M10 20v-1a2 2 0 1 1 4 0v1a1.5 1.5 0 1 1-3 0v-1a2 2 0 1 1 4 0v1a1.5 1.5 0 1 1-3 0v-1a2 2 0 1 1 4 0v1a1.5 1.5 0 1 1-3 0v-1a2 2 0 1 1 4 0z" />
-  </svg>
-);
-
-const SpinnerIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="spinner">
-    <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-    <path d="M12 2a10 10 0 0 1 10 10" />
-  </svg>
-);
-
-function escapeHtml(s) {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-const syntaxHighlight = (json) => {
-  if (!json) return "";
-  const str = JSON.stringify(json, null, 2);
-  return str.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, (match) => {
-    let cls = "json-number";
-    if (/^"/.test(match)) {
-      cls = /:$/.test(match) ? "json-key" : "json-string";
-    } else if (/true|false/.test(match)) {
-      cls = "json-boolean";
-    } else if (/null/.test(match)) {
-      cls = "json-null";
-    }
-    return `<span class="${cls}">${escapeHtml(match)}</span>`;
-  });
+const Icons = {
+  Upload: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="icon-upload">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" />
+      <line x1="12" y1="3" x2="12" y2="15" />
+    </svg>
+  ),
+  FileAudio: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17.5 22h.5c.5 0 1-.2 1.4-.6.4-.4.6-.9.6-1.4V7.5L14.5 2H6c-.5 0-1 .2-1.4.6C4.2 3 4 3.5 4 4v3" />
+      <polyline points="14 2 14 8 20 8" />
+      <circle cx="8" cy="16" r="5" />
+      <path d="M10 16v-2" />
+      <path d="M8 14v4" />
+      <path d="M6 16v-1" />
+    </svg>
+  ),
+  AlertCircle: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="8" x2="12" y2="12" />
+      <line x1="12" y1="16" x2="12.01" y2="16" />
+    </svg>
+  ),
+  Copy: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </svg>
+  ),
+  Check: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  ),
+  Waveform: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 12h2"/>
+      <path d="M6 8v8"/>
+      <path d="M10 4v16"/>
+      <path d="M14 6v12"/>
+      <path d="M18 9v6"/>
+      <path d="M22 12h-2"/>
+    </svg>
+  ),
+  Refresh: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+      <path d="M21 3v5h-5"/>
+      <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+      <path d="M3 21v-5h5"/>
+    </svg>
+  ),
+  Trash: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+  ),
 };
 
-export default function HomePage() {
-  const [file, setFile] = useState(null);
-  const [notes, setNotes] = useState("");
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const fileInputRef = useRef(null);
+// ============================================================================
+// Utilities
+// ============================================================================
 
+function formatLabel(key) {
+  const labelMap = {
+    patient_complaint: "Anamnese",
+    chief_complaint: "Anamnese",
+    findings: "Körperliche Untersuchung",
+    clinical_findings: "Körperliche Untersuchung",
+    diagnosis: "Diagnose",
+    next_steps: "Weiteres Vorgehen",
+    plan: "Plan",
+    assessment_plan: "Beurteilung & Plan",
+    social_history: "Sozialanamnese",
+    comment: "Kommentar",
+    notes: "Notizen",
+    medications: "Medikation",
+    allergies: "Allergien",
+    vital_signs: "Vitalzeichen",
+    history: "Vorgeschichte",
+  };
+  
+  return labelMap[key] || key
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatClipboardValue(value, depth = 0) {
+  const indent = "  ".repeat(depth);
+
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "-";
+    return value
+      .map((item) => `${indent}- ${formatClipboardValue(item, depth + 1).trimStart()}`)
+      .join("\n");
+  }
+
+  if (typeof value === "object") {
+    const entries = Object.entries(value).filter(
+      ([, itemValue]) => itemValue !== null && itemValue !== undefined && itemValue !== ""
+    );
+    if (entries.length === 0) return "-";
+    return entries
+      .map(([key, itemValue]) => `${indent}${formatLabel(key)}: ${formatClipboardValue(itemValue, depth + 1).trimStart()}`)
+      .join("\n");
+  }
+
+  return String(value);
+}
+
+// ============================================================================
+// Components
+// ============================================================================
+
+function TabNavigation({ activeTab, onTabChange }) {
+  return (
+    <nav className="tab-nav" role="tablist" aria-label="Content sections">
+      <button
+        role="tab"
+        aria-selected={activeTab === "transcription"}
+        className={`tab-btn ${activeTab === "transcription" ? "active" : ""}`}
+        onClick={() => onTabChange("transcription")}
+      >
+        Transkription
+      </button>
+      <button
+        role="tab"
+        aria-selected={activeTab === "notes"}
+        className={`tab-btn ${activeTab === "notes" ? "active" : ""}`}
+        onClick={() => onTabChange("notes")}
+      >
+        Notiz
+      </button>
+    </nav>
+  );
+}
+
+function ErrorAlert({ message }) {
+  return (
+    <div className="alert-error" role="alert" aria-live="assertive">
+      <Icons.AlertCircle />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+function FileDropzone({ file, onFileChange, inputRef, isSubmitting }) {
   const handleDragOver = (e) => {
     e.preventDefault();
     e.currentTarget.classList.add("drag-active");
@@ -71,18 +180,292 @@ export default function HomePage() {
   const handleDrop = (e) => {
     e.preventDefault();
     e.currentTarget.classList.remove("drag-active");
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      setFile(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files?.length > 0) {
+      onFileChange(e.dataTransfer.files[0]);
     }
   };
 
-  async function handleSubmit(event) {
-    event.preventDefault();
-    if (!file) {
-      setError("Please select an audio file.");
-      return;
-    }
+  return (
+    <div
+      className={`file-dropzone ${isSubmitting ? "disabled" : ""}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      onClick={() => !isSubmitting && inputRef.current?.click()}
+      role="button"
+      tabIndex={isSubmitting ? -1 : 0}
+      aria-label={file ? `Ausgewählte Datei: ${file.name}` : "Klicken oder Datei hierher ziehen"}
+      onKeyDown={(e) => {
+        if (!isSubmitting && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          inputRef.current?.click();
+        }
+      }}
+    >
+      <input
+        type="file"
+        className="file-input-hidden"
+        accept={ACCEPTED_TYPES}
+        ref={inputRef}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
+        aria-hidden="true"
+        tabIndex={-1}
+        disabled={isSubmitting}
+      />
+      {file ? (
+        <div className="file-selected">
+          <Icons.FileAudio />
+          <span className="file-name">{file.name}</span>
+          <button
+            type="button"
+            className="btn-clear-file"
+            onClick={(e) => {
+              e.stopPropagation();
+              onFileChange(null);
+            }}
+            aria-label="Datei löschen"
+            disabled={isSubmitting}
+          >
+            <Icons.Trash />
+          </button>
+        </div>
+      ) : (
+        <div className="dropzone-content">
+          <Icons.Upload />
+          <p className="dropzone-text">
+            <span className="dropzone-link">Datei auswählen</span> oder hierher ziehen
+          </p>
+          <p className="dropzone-hint">MP3 oder WAV</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
+function AudioPreview({ file }) {
+  const [audioUrl, setAudioUrl] = useState(null);
+
+  useEffect(() => {
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setAudioUrl(url);
+      return () => URL.revokeObjectURL(url);
+    } else {
+      setAudioUrl(null);
+    }
+  }, [file]);
+
+  if (!file || !audioUrl) return null;
+
+  return (
+    <div className="audio-preview">
+      <audio
+        controls
+        src={audioUrl}
+        aria-label="Audiovorschau"
+      >
+        Ihr Browser unterstützt kein Audio.
+      </audio>
+    </div>
+  );
+}
+
+function ProcessingState() {
+  return (
+    <div className="processing-state" aria-live="polite" aria-busy="true">
+      <div className="processing-spinner" />
+      <span className="processing-text">Verarbeite Diktat...</span>
+    </div>
+  );
+}
+
+function CopyButton({ text, label }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Copy failed:", err);
+    }
+  }, [text]);
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="btn-icon"
+      aria-label={copied ? "Kopiert!" : label}
+      title={label}
+    >
+      {copied ? <Icons.Check /> : <Icons.Copy />}
+    </button>
+  );
+}
+
+// Renders any value adaptively
+function RenderValue({ value, depth = 0 }) {
+  if (value === null || value === undefined || value === "") {
+    return <span className="text-muted">-</span>;
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    // Handle multiline strings
+    const text = String(value);
+    if (text.includes("\n")) {
+      return (
+        <div className="multiline-content">
+          {text.split("\n").map((line, i) => (
+            <p key={i}>{line}</p>
+          ))}
+        </div>
+      );
+    }
+    return <span>{text}</span>;
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return <span className="text-muted">-</span>;
+    }
+    return (
+      <ul className="content-list">
+        {value.map((item, index) => (
+          <li key={index}>
+            {typeof item === "object" ? (
+              <RenderValue value={item} depth={depth + 1} />
+            ) : (
+              String(item)
+            )}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  if (typeof value === "object") {
+    const entries = Object.entries(value).filter(
+      ([, v]) => v !== null && v !== undefined && v !== ""
+    );
+    if (entries.length === 0) {
+      return <span className="text-muted">-</span>;
+    }
+    return (
+      <div className="nested-content">
+        {entries.map(([key, val]) => (
+          <div key={key} className="nested-row">
+            <span className="nested-label">{formatLabel(key)}:</span>
+            <RenderValue value={val} depth={depth + 1} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return <span>{String(value)}</span>;
+}
+
+function ClinicalSummary({ data, title }) {
+  const priorityFields = [
+    "patient_complaint",
+    "chief_complaint",
+    "findings",
+    "clinical_findings",
+    "social_history",
+    "diagnosis",
+    "comment",
+    "notes",
+    "next_steps",
+    "plan",
+    "assessment_plan",
+  ];
+
+  const entries = Object.entries(data).filter(
+    ([, value]) => value !== null && value !== undefined && value !== ""
+  );
+
+  const sortedEntries = entries.sort(([keyA], [keyB]) => {
+    const indexA = priorityFields.indexOf(keyA);
+    const indexB = priorityFields.indexOf(keyB);
+    if (indexA === -1 && indexB === -1) return 0;
+    if (indexA === -1) return 1;
+    if (indexB === -1) return -1;
+    return indexA - indexB;
+  });
+
+  const summaryText = sortedEntries
+    .map(([key, value]) => `${formatLabel(key)}: ${formatClipboardValue(value, 1)}`)
+    .join("\n\n");
+
+  return (
+    <div className="summary-container">
+      <header className="summary-header">
+        <h1 className="summary-title">{title || "Klinische Zusammenfassung"}</h1>
+        <CopyButton text={summaryText} label="Zusammenfassung kopieren" />
+      </header>
+
+      <div className="summary-table">
+        {sortedEntries.map(([key, value]) => (
+          <div key={key} className="summary-row">
+            <div className="summary-label">{formatLabel(key)}</div>
+            <div className="summary-value">
+              <RenderValue value={value} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function UploadSection({ onSubmit, isSubmitting, file, setFile }) {
+  const fileInputRef = useRef(null);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (file && !isSubmitting) {
+      onSubmit({ file });
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="upload-section">
+      <FileDropzone
+        file={file}
+        onFileChange={setFile}
+        inputRef={fileInputRef}
+        isSubmitting={isSubmitting}
+      />
+      
+      {file && <AudioPreview file={file} />}
+
+      {file && !isSubmitting && (
+        <button type="submit" className="btn-primary">
+          <Icons.Waveform />
+          Diktat verarbeiten
+        </button>
+      )}
+
+      {isSubmitting && <ProcessingState />}
+    </form>
+  );
+}
+
+// ============================================================================
+// Main Page
+// ============================================================================
+
+export default function HomePage() {
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeTab, setActiveTab] = useState("transcription");
+  const [file, setFile] = useState(null);
+
+  const handleSubmit = async ({ file }) => {
     setError("");
     setResult(null);
     setIsSubmitting(true);
@@ -90,145 +473,103 @@ export default function HomePage() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      if (notes) formData.append("notes", notes);
 
-      const response = await fetch("/api/transcribe", {
+      const res = await fetch("/api/transcribe", {
         method: "POST",
         body: formData,
       });
 
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error || "Failed to process audio.");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Request failed: ${res.status}`);
       }
 
-      setResult(payload.summary);
+      const data = await res.json();
+      setResult(data.summary);
+      setActiveTab("notes");
     } catch (err) {
-      setError(err.message);
+      setError(err.message || "An unexpected error occurred.");
     } finally {
       setIsSubmitting(false);
     }
-  }
+  };
+
+  const handleReset = () => {
+    setResult(null);
+    setFile(null);
+    setError("");
+    setActiveTab("transcription");
+  };
+
+  // Determine the title from result if available
+  const getTitle = () => {
+    if (result?.diagnosis) {
+      const diag = typeof result.diagnosis === "string" 
+        ? result.diagnosis 
+        : result.diagnosis.primary || result.diagnosis.name || "Zusammenfassung";
+      // Take first sentence or limit to 50 chars
+      const shortDiag = diag.split(".")[0].substring(0, 50);
+      return shortDiag;
+    }
+    return "Klinische Zusammenfassung";
+  };
 
   return (
-    <main className="container">
-      <header className="header">
-        <h1 className="title">MediSprache</h1>
-        <p className="subtitle">
-          Clinical dictation and structured summarization.
-        </p>
-      </header>
+    <div className="app-container">
+      <a href="#main" className="skip-link">
+        Zum Inhalt springen
+      </a>
 
-      {error && (
-        <div className="error-message">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          {error}
-        </div>
-      )}
+      <main id="main" className="main-content">
+        {error && <ErrorAlert message={error} />}
 
-      {!isSubmitting && !result && (
-        <section className="card">
-          <form onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label className="form-label">Audio dictation</label>
-              <div 
-                className="file-dropzone"
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <input
-                  type="file"
-                  className="file-input"
-                  accept={ACCEPTED_TYPES}
-                  ref={fileInputRef}
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                />
-                <UploadIcon />
-                <div>
-                  {file ? (
-                    <span className="file-name">
-                      <FileAudioIcon /> {file.name}
-                    </span>
-                  ) : (
-                    <span className="dropzone-hint">Click to upload or drag and drop</span>
-                  )}
+        {!result ? (
+          <div className="upload-view">
+            <header className="page-header">
+              <h1 className="page-title">MediSprache</h1>
+              <p className="page-subtitle">Medizinische Diktat-Transkription</p>
+            </header>
+            
+            <UploadSection 
+              onSubmit={handleSubmit} 
+              isSubmitting={isSubmitting}
+              file={file}
+              setFile={setFile}
+            />
+          </div>
+        ) : (
+          <div className="result-view">
+            <ClinicalSummary data={result} title={getTitle()} />
+            
+            <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} />
+
+            <div className="tab-content">
+              {activeTab === "transcription" && (
+                <div className="transcription-content">
+                  <p className="text-muted">
+                    Rohtranskription wird in einer zukünftigen Version verfügbar sein.
+                  </p>
                 </div>
-              </div>
+              )}
+              
+              {activeTab === "notes" && (
+                <div className="notes-content">
+                  <p className="text-muted">
+                    Notizen bearbeiten wird in einer zukünftigen Version verfügbar sein.
+                  </p>
+                </div>
+              )}
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Context notes (optional)</label>
-              <textarea
-                className="textarea"
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-                placeholder="Add any specific instructions or context..."
-              />
+            <div className="result-actions">
+              <button onClick={handleReset} className="btn-secondary">
+                <Icons.Refresh />
+                Neues Diktat
+              </button>
             </div>
-
-            <button type="submit" className="btn-primary" disabled={!file}>
-              Process dictation
-            </button>
-          </form>
-        </section>
-      )}
-
-      {isSubmitting && (
-        <section className="card loading-state">
-          <SpinnerIcon />
-          <p>Processing dictation...</p>
-        </section>
-      )}
-
-      {result && (
-        <section className="card">
-          <div className="result-header">
-            <h2 className="result-title">Clinical Summary</h2>
-            <button
-              type="button"
-              onClick={() => { setResult(null); setFile(null); setNotes(""); }}
-              className="btn-secondary"
-            >
-              Start new
-            </button>
           </div>
-          
-          <div className="summary-grid">
-            {result.patient_complaint && (
-              <div className="summary-item">
-                <div className="summary-label">Patient Complaint</div>
-                <div className="summary-value">{result.patient_complaint}</div>
-              </div>
-            )}
-            {result.findings && (
-              <div className="summary-item">
-                <div className="summary-label">Clinical Findings</div>
-                <div className="summary-value">{result.findings}</div>
-              </div>
-            )}
-            {result.diagnosis && (
-              <div className="summary-item">
-                <div className="summary-label">Diagnosis</div>
-                <div className="summary-value">{result.diagnosis}</div>
-              </div>
-            )}
-            {result.next_steps && (
-              <div className="summary-item">
-                <div className="summary-label">Plan & Next Steps</div>
-                <div className="summary-value">{result.next_steps}</div>
-              </div>
-            )}
-          </div>
-
-          <details className="json-details">
-            <summary className="json-summary">Developer details</summary>
-            <pre className="json-view" dangerouslySetInnerHTML={{ __html: syntaxHighlight(result) }} />
-          </details>
-        </section>
-      )}
-    </main>
+        )}
+      </main>
+    </div>
   );
 }
