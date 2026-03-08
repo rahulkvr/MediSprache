@@ -51,6 +51,12 @@ Start the full stack:
 docker compose up --build
 ```
 
+Start with GPU access (Linux Docker Engine or Docker Desktop on Windows + WSL2). This enables GPU for both ASR (`backend`) and Ollama:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+```
+
 If you see an error mentioning `dockerDesktopLinuxEngine` or `The system cannot find the file specified`, Docker Desktop is not running yet. Start Docker Desktop first, wait for the engine to be ready, then rerun `docker compose up --build`.
 
 Services:
@@ -99,7 +105,7 @@ The compose file supports these environment variables:
 | `OLLAMA_MODEL` | `qwen2.5:3b` | Ollama model name used for the ADK agent |
 | `OLLAMA_API_BASE` | `http://ollama:11434` | Ollama API base URL used inside the backend container |
 | `WHISPER_MODEL` | `base` | faster-whisper model size; use `small` or `medium` on 16GB+ RAM |
-| `WHISPER_DEVICE` | `cpu` | Whisper runtime device, e.g. `cpu` or `cuda` |
+| `WHISPER_DEVICE` | `auto` | `auto`, `cpu`, or `cuda`; `auto` picks CUDA when visible, otherwise CPU |
 | `ADK_API_BASE` | `http://backend:8000` | Backend URL used by the frontend container |
 
 ## Local Development
@@ -197,6 +203,7 @@ The backend app name is `medisprache`.
 - [`backend/medisprache/plugins/ollama_bridge.py`](backend/medisprache/plugins/ollama_bridge.py): plugin that normalizes Ollama tool-call behavior for ADK
 - [`backend/main.py`](backend/main.py): local CLI entry point
 - [`docker-compose.yml`](docker-compose.yml): runs `frontend`, `backend`, and `ollama`
+- [`docker-compose.gpu.yml`](docker-compose.gpu.yml): optional GPU override for the backend service
 - [`frontend/app/api/transcribe/route.js`](frontend/app/api/transcribe/route.js): server-side upload route that calls ADK
 
 ## Troubleshooting
@@ -257,4 +264,5 @@ frontend/
   Dockerfile
   app/
 docker-compose.yml
+docker-compose.gpu.yml
 ```

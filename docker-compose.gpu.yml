@@ -1,0 +1,8 @@
+services:
+  ollama:
+    gpus: all
+
+  backend:
+    gpus: all
+    environment:
+      WHISPER_DEVICE: ${WHISPER_DEVICE:-auto}

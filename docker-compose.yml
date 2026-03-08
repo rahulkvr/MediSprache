@@ -39,7 +39,8 @@ services:
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
       # 8GB RAM: use base/small; set WHISPER_MODEL=small or medium on 16GB+
       WHISPER_MODEL: ${WHISPER_MODEL:-base}
-      WHISPER_DEVICE: ${WHISPER_DEVICE:-cpu}
+      # auto -> cuda when available, otherwise cpu
+      WHISPER_DEVICE: ${WHISPER_DEVICE:-auto}
       WHISPER_BEAM_SIZE: ${WHISPER_BEAM_SIZE:-3}
     ports:
       - "8000:8000"

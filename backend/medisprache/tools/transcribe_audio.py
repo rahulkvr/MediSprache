@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
 import mimetypes
 import os
 import tempfile
 from pathlib import Path
 
+import ctranslate2
 from faster_whisper import WhisperModel
 from google.adk.tools.tool_context import ToolContext
 
@@ -12,9 +14,11 @@ from medisprache.schemas.transcript import TranscriptResult
 
 # Lighter defaults for 8GB RAM; override with env for more capable machines.
 _DEFAULT_MODEL = os.getenv("WHISPER_MODEL", "base")
-_DEFAULT_DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
+_DEFAULT_DEVICE = os.getenv("WHISPER_DEVICE", "auto")
 _DEFAULT_BEAM_SIZE = int(os.getenv("WHISPER_BEAM_SIZE", "3"))  # 3 uses less memory than 5
 _AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
+_VALID_DEVICES = frozenset({"cpu", "cuda", "auto"})
+_LOGGER = logging.getLogger(__name__)
 
 # Valid faster-whisper model sizes (LLM sometimes passes tool name or invalid value).
 _VALID_WHISPER_MODELS = frozenset({
@@ -46,25 +50,66 @@ def _normalize_model_name(model_name: str) -> str:
 
 
 def _normalize_device(device: str) -> str:
-    """Use env default when LLM requests CUDA but we're in a CPU-only environment (e.g. Docker)."""
-    if not device or not device.strip():
-        return _DEFAULT_DEVICE
-    d = device.strip().lower()
-    if d.startswith("cuda"):
-        return _DEFAULT_DEVICE  # Respect WHISPER_DEVICE=cpu in Docker / 8GB
-    return d if d in ("cpu", "auto") else _DEFAULT_DEVICE
+    """Return a normalized device token accepted by faster-whisper."""
+    candidate = (device or _DEFAULT_DEVICE).strip().lower()
+    if candidate.startswith("cuda"):
+        return "cuda"
+    if candidate in _VALID_DEVICES:
+        return candidate
+
+    fallback = _DEFAULT_DEVICE.strip().lower()
+    if fallback.startswith("cuda"):
+        return "cuda"
+    return fallback if fallback in _VALID_DEVICES else "auto"
+
+
+def _cuda_device_count() -> int:
+    try:
+        return int(ctranslate2.get_cuda_device_count())
+    except Exception:
+        return 0
+
+
+def _resolve_runtime_device(device: str) -> str:
+    """Resolve auto/cuda requests to an actually available runtime device."""
+    normalized = _normalize_device(device)
+    if normalized == "auto":
+        return "cuda" if _cuda_device_count() > 0 else "cpu"
+    if normalized == "cuda" and _cuda_device_count() <= 0:
+        return "cpu"
+    return normalized
 
 
 def _get_model(model_name: str, device: str) -> WhisperModel:
     """Return a cached WhisperModel, loading on first call.
 
-    Callers must pass already-normalised model_name and device values
-    (use _normalize_model_name / _normalize_device before calling).
+    model_name should already be validated. device may be cpu/cuda/auto and is
+    resolved to an available runtime target in this function.
     """
-    key = f"{model_name}:{device}"
+    runtime_device = _resolve_runtime_device(device)
+    key = f"{model_name}:{runtime_device}"
     if key not in _model_cache:
-        compute_type = "int8" if device == "cpu" else "float16"
-        _model_cache[key] = WhisperModel(model_name, device=device, compute_type=compute_type)
+        compute_type = "int8" if runtime_device == "cpu" else "float16"
+        try:
+            _model_cache[key] = WhisperModel(
+                model_name,
+                device=runtime_device,
+                compute_type=compute_type,
+            )
+        except Exception:
+            if runtime_device != "cuda":
+                raise
+            cpu_key = f"{model_name}:cpu"
+            if cpu_key not in _model_cache:
+                _LOGGER.warning(
+                    "Whisper GPU initialization failed; falling back to CPU int8."
+                )
+                _model_cache[cpu_key] = WhisperModel(
+                    model_name,
+                    device="cpu",
+                    compute_type="int8",
+                )
+            _model_cache[key] = _model_cache[cpu_key]
     return _model_cache[key]
 
 
@@ -78,7 +123,6 @@ def _transcribe_path(
 ) -> TranscriptResult:
     """Run transcription on a local audio path and return a validated model."""
     model_name = _normalize_model_name(model_name)
-    device = _normalize_device(device)
     if beam_size < 1:
         raise ValueError("beam_size must be >= 1")
     if not audio_path.exists():
