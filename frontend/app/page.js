@@ -3,6 +3,15 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 
 const ACCEPTED_TYPES = ".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav";
+const STAGE_LABELS = {
+  upload_received: "Upload empfangen",
+  session_created: "ADK-Sitzung erstellt",
+  agent_running: "Agent läuft",
+  transcribing_audio: "Audio wird transkribiert",
+  transcription_done: "Transkription abgeschlossen",
+  summarizing: "Klinische Zusammenfassung wird erstellt",
+  completed: "Fertig",
+};
 
 // ============================================================================
 // Icons (inline SVGs)
@@ -98,6 +107,21 @@ function formatLabel(key) {
   return labelMap[key] || key
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatStageLabel(stage) {
+  if (!stage) {
+    return "Verarbeite Diktat...";
+  }
+  return STAGE_LABELS[stage] || stage.replace(/_/g, " ");
+}
+
+function parseNdjsonLine(line) {
+  try {
+    return JSON.parse(line);
+  } catch (error) {
+    throw new Error(`Failed to parse NDJSON line: '${line}'`, { cause: error });
+  }
 }
 
 function formatClipboardValue(value, depth = 0) {
@@ -282,11 +306,37 @@ function AudioPreview({ file }) {
   );
 }
 
-function ProcessingState() {
+function ProcessingState({ stage, stageHistory, partialText }) {
   return (
-    <div className="processing-state" aria-live="polite" aria-busy="true">
-      <div className="processing-spinner" />
-      <span className="processing-text">Verarbeite Diktat...</span>
+    <div className="processing-state-wrapper" aria-live="polite" aria-busy="true">
+      <div className="processing-state">
+        <div className="processing-spinner" />
+        <span className="processing-text">{formatStageLabel(stage)}</span>
+      </div>
+      {stageHistory.length > 0 && (
+        <ol className="stage-list">
+          {stageHistory.map((entry, index) => {
+            const isActive = entry.stage === stage;
+            return (
+              <li
+                key={`${entry.stage}-${index}`}
+                className={`stage-item ${isActive ? "active" : ""}`}
+              >
+                <p className="stage-name">{formatStageLabel(entry.stage)}</p>
+                {entry.message ? (
+                  <p className="stage-message">{entry.message}</p>
+                ) : null}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {partialText && (
+        <div className="partial-json">
+          <p className="partial-json-label">LLM-Zwischenstand</p>
+          <pre className="json-pre-block">{partialText}</pre>
+        </div>
+      )}
     </div>
   );
 }
@@ -432,7 +482,15 @@ function ClinicalSummary({ data, title }) {
   );
 }
 
-function UploadSection({ onSubmit, isSubmitting, file, setFile }) {
+function UploadSection({
+  onSubmit,
+  isSubmitting,
+  file,
+  setFile,
+  stage,
+  stageHistory,
+  partialText,
+}) {
   const fileInputRef = useRef(null);
 
   const handleSubmit = (e) => {
@@ -460,7 +518,13 @@ function UploadSection({ onSubmit, isSubmitting, file, setFile }) {
         </button>
       )}
 
-      {isSubmitting && <ProcessingState />}
+      {isSubmitting && (
+        <ProcessingState
+          stage={stage}
+          stageHistory={stageHistory}
+          partialText={partialText}
+        />
+      )}
     </form>
   );
 }
@@ -475,11 +539,17 @@ export default function HomePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState("summary");
   const [file, setFile] = useState(null);
+  const [stage, setStage] = useState("");
+  const [stageHistory, setStageHistory] = useState([]);
+  const [partialText, setPartialText] = useState("");
 
   const handleSubmit = async ({ file }) => {
     setError("");
     setResult(null);
     setIsSubmitting(true);
+    setStage("");
+    setStageHistory([]);
+    setPartialText("");
 
     try {
       const formData = new FormData();
@@ -495,8 +565,85 @@ export default function HomePage() {
         throw new Error(data.error || `Request failed: ${res.status}`);
       }
 
-      const data = await res.json();
-      setResult(data.summary);
+      if (!res.body) {
+        const data = await res.json();
+        setResult(data.summary);
+        setActiveTab("summary");
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let streamBuffer = "";
+      let streamError = "";
+      let streamedSummary = null;
+
+      const handleEvent = (payload) => {
+        if (!payload || typeof payload !== "object") {
+          return;
+        }
+
+        if (payload.type === "stage") {
+          const nextStage = payload.stage || "";
+          const nextMessage = payload.message || "";
+          setStage(nextStage);
+          setStageHistory((prev) => [...prev, { stage: nextStage, message: nextMessage }]);
+          return;
+        }
+
+        if (payload.type === "partial" && typeof payload.text === "string") {
+          setPartialText(payload.text);
+          return;
+        }
+
+        if (payload.type === "result") {
+          streamedSummary = payload.summary;
+          return;
+        }
+
+        if (payload.type === "error") {
+          streamError = payload.error || "Unbekannter Streaming-Fehler.";
+        }
+      };
+
+      const processChunk = (chunk) => {
+        streamBuffer += chunk;
+        const lines = streamBuffer.split("\n");
+        streamBuffer = lines.pop() ?? "";
+
+        for (const rawLine of lines) {
+          const line = rawLine.trim();
+          if (!line) {
+            continue;
+          }
+          handleEvent(parseNdjsonLine(line));
+        }
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+        processChunk(decoder.decode(value, { stream: true }));
+        if (streamError) {
+          break;
+        }
+      }
+
+      if (streamBuffer.trim()) {
+        handleEvent(parseNdjsonLine(streamBuffer.trim()));
+      }
+
+      if (streamError) {
+        throw new Error(streamError);
+      }
+
+      if (!streamedSummary) {
+        throw new Error("Streaming finished without a final summary payload.");
+      }
+
+      setResult(streamedSummary);
       setActiveTab("summary");
     } catch (err) {
       setError(err.message || "An unexpected error occurred.");
@@ -510,6 +657,9 @@ export default function HomePage() {
     setFile(null);
     setError("");
     setActiveTab("summary");
+    setStage("");
+    setStageHistory([]);
+    setPartialText("");
   };
 
   // Determine the title from result if available
@@ -546,6 +696,9 @@ export default function HomePage() {
               isSubmitting={isSubmitting}
               file={file}
               setFile={setFile}
+              stage={stage}
+              stageHistory={stageHistory}
+              partialText={partialText}
             />
           </div>
         ) : (
