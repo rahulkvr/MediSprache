@@ -55,20 +55,20 @@ const Icons = {
   ),
   Waveform: () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M2 12h2"/>
-      <path d="M6 8v8"/>
-      <path d="M10 4v16"/>
-      <path d="M14 6v12"/>
-      <path d="M18 9v6"/>
-      <path d="M22 12h-2"/>
+      <path d="M2 12h2" />
+      <path d="M6 8v8" />
+      <path d="M10 4v16" />
+      <path d="M14 6v12" />
+      <path d="M18 9v6" />
+      <path d="M22 12h-2" />
     </svg>
   ),
   Refresh: () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
-      <path d="M21 3v5h-5"/>
-      <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
-      <path d="M3 21v-5h5"/>
+      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+      <path d="M3 21v-5h5" />
     </svg>
   ),
   Trash: () => (
@@ -103,7 +103,7 @@ function formatLabel(key) {
     vital_signs: "Vitalzeichen",
     history: "Vorgeschichte",
   };
-  
+
   return labelMap[key] || key
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
@@ -307,34 +307,22 @@ function AudioPreview({ file }) {
 }
 
 function ProcessingState({ stage, stageHistory, partialText }) {
+  const currentEntry = stageHistory.length > 0
+    ? stageHistory[stageHistory.length - 1]
+    : { stage, message: "" };
+
+  const stageLabel = formatStageLabel(currentEntry.stage);
+
   return (
-    <div className="processing-state-wrapper" aria-live="polite" aria-busy="true">
-      <div className="processing-state">
-        <div className="processing-spinner" />
-        <span className="processing-text">{formatStageLabel(stage)}</span>
+    <div className="genai-loader-container" aria-live="polite" aria-busy="true">
+      <div className="genai-status-row">
+        <div className="genai-dot-pulse"></div>
+        <span className="genai-status-text">{stageLabel}</span>
       </div>
-      {stageHistory.length > 0 && (
-        <ol className="stage-list">
-          {stageHistory.map((entry, index) => {
-            const isActive = entry.stage === stage;
-            return (
-              <li
-                key={`${entry.stage}-${index}`}
-                className={`stage-item ${isActive ? "active" : ""}`}
-              >
-                <p className="stage-name">{formatStageLabel(entry.stage)}</p>
-                {entry.message ? (
-                  <p className="stage-message">{entry.message}</p>
-                ) : null}
-              </li>
-            );
-          })}
-        </ol>
-      )}
+
       {partialText && (
-        <div className="partial-json">
-          <p className="partial-json-label">LLM-Zwischenstand</p>
-          <pre className="json-pre-block">{partialText}</pre>
+        <div className="genai-partial-view anim-fade-in">
+          <pre className="genai-partial-pre" aria-live="polite">{partialText}</pre>
         </div>
       )}
     </div>
@@ -508,7 +496,7 @@ function UploadSection({
         inputRef={fileInputRef}
         isSubmitting={isSubmitting}
       />
-      
+
       {file && <AudioPreview file={file} />}
 
       {file && !isSubmitting && (
@@ -592,7 +580,7 @@ export default function HomePage() {
         }
 
         if (payload.type === "partial" && typeof payload.text === "string") {
-          setPartialText(payload.text);
+          // Handled in processChunk now to avoid losing parts of string updates
           return;
         }
 
@@ -611,12 +599,27 @@ export default function HomePage() {
         const lines = streamBuffer.split("\n");
         streamBuffer = lines.pop() ?? "";
 
+        // Collect all new text from this chunk to append to partialText
+        let newPartialText = "";
+
         for (const rawLine of lines) {
           const line = rawLine.trim();
           if (!line) {
             continue;
           }
-          handleEvent(parseNdjsonLine(line));
+
+          const payload = parseNdjsonLine(line);
+          handleEvent(payload);
+
+          // If this was a partial text payload, we append it to our local accumulator
+          if (payload?.type === "partial" && typeof payload.text === "string") {
+            newPartialText += payload.text;
+          }
+        }
+
+        // If we found new partial text in this chunk of lines, update the state by appending
+        if (newPartialText) {
+          setPartialText((prev) => prev + newPartialText);
         }
       };
 
@@ -665,8 +668,8 @@ export default function HomePage() {
   // Determine the title from result if available
   const getTitle = () => {
     if (result?.diagnosis) {
-      const diag = typeof result.diagnosis === "string" 
-        ? result.diagnosis 
+      const diag = typeof result.diagnosis === "string"
+        ? result.diagnosis
         : result.diagnosis.primary || result.diagnosis.name || "Zusammenfassung";
       // Take first sentence or limit to 50 chars
       const shortDiag = diag.split(".")[0].substring(0, 50);
@@ -690,9 +693,9 @@ export default function HomePage() {
               <h1 className="page-title">MediSprache</h1>
               <p className="page-subtitle">Medizinische Diktat-Transkription</p>
             </header>
-            
-            <UploadSection 
-              onSubmit={handleSubmit} 
+
+            <UploadSection
+              onSubmit={handleSubmit}
               isSubmitting={isSubmitting}
               file={file}
               setFile={setFile}
@@ -711,7 +714,7 @@ export default function HomePage() {
                   <ClinicalSummary data={result} title={getTitle()} />
                 </div>
               )}
-              
+
               {activeTab === "json" && (
                 <div className="json-content anim-fade-in">
                   <pre className="json-pre-block">
