@@ -1,9 +1,9 @@
 """
-Phase 2 schema tests for MediSprache.
+Schema tests for MediSprache.
 
 Covers:
 - Valid minimal/valid instances for DetailedClinicalNote, StructuredClinicalOutput,
-  TranscriptResult, JobRecord
+  TranscriptResult
 - Extra fields rejected (extra="forbid")
 - Missing required fields raise ValidationError
 - model_dump(exclude_none=True) removes omitted optional sections
@@ -23,8 +23,6 @@ from medisprache.schemas import (
     CompactClinicalSummary,
     DetailedClinicalNote,
     ImagingResult,
-    JobRecord,
-    JobStatus,
     LabResultGroup,
     Medication,
     PhysicalExam,
@@ -95,40 +93,6 @@ def test_transcript_result_valid():
     assert len(transcript.segments) == 1
 
 
-def test_job_record_valid():
-    """Valid JobRecord requires id, status, input_filename, audio_path."""
-    job = JobRecord(
-        id="job-1",
-        status=JobStatus.queued,
-        input_filename="sample.wav",
-        audio_path="/tmp/sample.wav",
-    )
-    assert job.status == JobStatus.queued
-
-
-def test_job_record_with_structured_output():
-    """JobRecord can hold StructuredClinicalOutput."""
-    job = JobRecord(
-        id="job-2",
-        status=JobStatus.succeeded,
-        input_filename="sample.wav",
-        audio_path="/tmp/sample.wav",
-        structured_output=StructuredClinicalOutput(
-            summary=CompactClinicalSummary(
-                patient_complaint="Severe headache",
-                findings="Weakness",
-                diagnosis="ICH",
-                next_steps="Admit and monitor",
-            ),
-            note=DetailedClinicalNote(
-                chief_complaint="Evaluation of severe headache",
-                history_of_presenting_illness="Sudden onset severe headache.",
-            ),
-        ),
-    )
-    assert job.structured_output is not None
-
-
 # ---------------------------------------------------------------------------
 # Extra fields rejected
 # ---------------------------------------------------------------------------
@@ -162,18 +126,6 @@ def test_extra_fields_rejected_transcript_result():
         )
 
 
-def test_extra_fields_rejected_job_record():
-    """JobRecord rejects extra fields."""
-    with pytest.raises(ValidationError):
-        JobRecord(
-            id="j",
-            status=JobStatus.queued,
-            input_filename="a.wav",
-            audio_path="/a.wav",
-            forbidden_field=True,
-        )
-
-
 # ---------------------------------------------------------------------------
 # Missing required fields
 # ---------------------------------------------------------------------------
@@ -195,14 +147,6 @@ def test_missing_required_transcript_result():
         TranscriptResult(text="x", model_name="x")
     with pytest.raises(ValidationError):
         TranscriptResult(text="x", segments=[TranscriptSegment(start=0, end=1, text="x")])
-
-
-def test_missing_required_job_record():
-    """Missing id, status, input_filename, or audio_path raises ValidationError."""
-    with pytest.raises(ValidationError):
-        JobRecord(status=JobStatus.queued, input_filename="a.wav", audio_path="/a.wav")
-    with pytest.raises(ValidationError):
-        JobRecord(id="j", input_filename="a.wav", audio_path="/a.wav")
 
 
 # ---------------------------------------------------------------------------

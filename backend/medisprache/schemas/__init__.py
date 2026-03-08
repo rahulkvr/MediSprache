@@ -11,7 +11,6 @@ from .clinical_summary import (
     StructuredClinicalOutput,
     VitalSigns,
 )
-from .job import JobRecord, JobStatus
 from .transcript import TranscriptResult, TranscriptSegment
 
 __all__ = [
@@ -20,8 +19,6 @@ __all__ = [
     "CompactClinicalSummary",
     "DetailedClinicalNote",
     "ImagingResult",
-    "JobRecord",
-    "JobStatus",
     "LabResultGroup",
     "Medication",
     "PhysicalExam",

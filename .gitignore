@@ -208,3 +208,7 @@ __marimo__/
 
 # Model weights
 models/
+
+# Frontend
+frontend/node_modules/
+frontend/.next/

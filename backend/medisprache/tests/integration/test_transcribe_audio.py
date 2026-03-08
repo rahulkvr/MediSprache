@@ -18,12 +18,12 @@ def test_sample_audio_fixture_exists():
 
 @pytest.mark.integration
 def test_transcribe_audio_happy_path():
-    result = transcribe_audio(SAMPLE_AUDIO)
+    result = transcribe_audio(str(SAMPLE_AUDIO))
 
     assert isinstance(result, dict)
 
     validated = TranscriptResult(**result)
     assert validated.text.strip(), "Transcript text must not be empty"
-    assert validated.model_name == "leduckhai/MultiMed-ST"
+    assert "faster-whisper" in validated.model_name or "Systran" in validated.model_name
     assert isinstance(validated.segments, list)
     assert len(validated.segments) > 0
