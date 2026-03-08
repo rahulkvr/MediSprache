@@ -205,3 +205,13 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Google ADK local runtime (session DB and uploaded artifacts)
+.adk/
+
+# Model weights
+models/
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
