@@ -306,12 +306,8 @@ function AudioPreview({ file }) {
   );
 }
 
-function ProcessingState({ stage, stageHistory, partialText }) {
-  const currentEntry = stageHistory.length > 0
-    ? stageHistory[stageHistory.length - 1]
-    : { stage, message: "" };
-
-  const stageLabel = formatStageLabel(currentEntry.stage);
+function ProcessingState({ stage, partialText }) {
+  const stageLabel = formatStageLabel(stage);
 
   return (
     <div className="genai-loader-container" aria-live="polite" aria-busy="true">
@@ -476,7 +472,6 @@ function UploadSection({
   file,
   setFile,
   stage,
-  stageHistory,
   partialText,
 }) {
   const fileInputRef = useRef(null);
@@ -509,7 +504,6 @@ function UploadSection({
       {isSubmitting && (
         <ProcessingState
           stage={stage}
-          stageHistory={stageHistory}
           partialText={partialText}
         />
       )}
@@ -528,7 +522,6 @@ export default function HomePage() {
   const [activeTab, setActiveTab] = useState("summary");
   const [file, setFile] = useState(null);
   const [stage, setStage] = useState("");
-  const [stageHistory, setStageHistory] = useState([]);
   const [partialText, setPartialText] = useState("");
 
   const handleSubmit = async ({ file }) => {
@@ -536,7 +529,6 @@ export default function HomePage() {
     setResult(null);
     setIsSubmitting(true);
     setStage("");
-    setStageHistory([]);
     setPartialText("");
 
     try {
@@ -572,15 +564,12 @@ export default function HomePage() {
         }
 
         if (payload.type === "stage") {
-          const nextStage = payload.stage || "";
-          const nextMessage = payload.message || "";
-          setStage(nextStage);
-          setStageHistory((prev) => [...prev, { stage: nextStage, message: nextMessage }]);
+          setStage(payload.stage || "");
           return;
         }
 
         if (payload.type === "partial" && typeof payload.text === "string") {
-          // Handled in processChunk now to avoid losing parts of string updates
+          setPartialText(payload.text);
           return;
         }
 
@@ -599,27 +588,13 @@ export default function HomePage() {
         const lines = streamBuffer.split("\n");
         streamBuffer = lines.pop() ?? "";
 
-        // Collect all new text from this chunk to append to partialText
-        let newPartialText = "";
-
         for (const rawLine of lines) {
           const line = rawLine.trim();
           if (!line) {
             continue;
           }
 
-          const payload = parseNdjsonLine(line);
-          handleEvent(payload);
-
-          // If this was a partial text payload, we append it to our local accumulator
-          if (payload?.type === "partial" && typeof payload.text === "string") {
-            newPartialText += payload.text;
-          }
-        }
-
-        // If we found new partial text in this chunk of lines, update the state by appending
-        if (newPartialText) {
-          setPartialText((prev) => prev + newPartialText);
+          handleEvent(parseNdjsonLine(line));
         }
       };
 
@@ -661,7 +636,6 @@ export default function HomePage() {
     setError("");
     setActiveTab("summary");
     setStage("");
-    setStageHistory([]);
     setPartialText("");
   };
 
@@ -706,7 +680,6 @@ export default function HomePage() {
               }
             }}
             stage={stage}
-            stageHistory={stageHistory}
             partialText={partialText}
           />
         </div>
