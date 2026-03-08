@@ -44,13 +44,14 @@ const Icons = {
       <polyline points="20 6 9 17 4 12" />
     </svg>
   ),
-  Mic: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
-      <path d="M9 22c1.046.935 2.404 1.5 4 1.5s2.954-.565 4-1.5"/>
-      <line x1="9" x2="9" y1="9" x2="9" y2="5"/>
-      <line x1="12" x2="12" y1="9" x2="12" y2="2"/>
-      <line x1="15" x2="15" y1="9" x2="15" y2="5"/>
+  Waveform: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 12h2"/>
+      <path d="M6 8v8"/>
+      <path d="M10 4v16"/>
+      <path d="M14 6v12"/>
+      <path d="M18 9v6"/>
+      <path d="M22 12h-2"/>
     </svg>
   ),
   Refresh: () => (
@@ -412,7 +413,7 @@ function UploadSection({ onSubmit, isSubmitting, file, setFile }) {
 
       {file && !isSubmitting && (
         <button type="submit" className="btn-primary">
-          <Icons.Mic />
+          <Icons.Waveform />
           Diktat verarbeiten
         </button>
       )}
