@@ -177,7 +177,7 @@ body {
 .file-selected {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0.625rem;
   color: var(--text-primary);
 }
@@ -190,6 +190,42 @@ body {
 .file-name {
   font-weight: 500;
   font-size: 0.9375rem;
+}
+
+.btn-clear-file {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--error-bg);
+  border: none;
+  border-radius: 6px;
+  color: var(--error);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+  margin-left: auto;
+}
+
+.btn-clear-file:hover:not(:disabled) {
+  background: var(--error);
+  color: white;
+}
+
+.btn-clear-file:focus-visible {
+  outline: 2px solid var(--error);
+  outline-offset: 2px;
+}
+
+.btn-clear-file:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-clear-file svg {
+  width: 16px;
+  height: 16px;
 }
 
 /* Audio preview */
