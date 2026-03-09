@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import re
 from typing import AsyncGenerator
@@ -15,19 +14,23 @@ from google.adk.events.event_actions import EventActions
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.plugins.save_files_as_artifacts_plugin import SaveFilesAsArtifactsPlugin
 
+from medisprache.prompts import build_schema_instruction, get_prompt_profile
+from medisprache.prompts.registry import COMPACT_CLINICAL_SUMMARY_PROMPT_ID
 from medisprache.schemas.clinical_summary import CompactClinicalSummary
 from medisprache.tools.transcribe_audio import transcribe_audio, transcribe_uploaded_artifact
 
 APP_NAME = "medisprache"
 DEFAULT_OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
 DEFAULT_OLLAMA_API_BASE = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
-SUMMARY_SCHEMA = json.dumps(
-    CompactClinicalSummary.model_json_schema(),
-    ensure_ascii=False,
-    indent=2,
-)
 TRANSCRIPT_STATE_KEY = "transcript_text"
 SUMMARY_STATE_KEY = "clinical_summary"
+SUMMARY_PROMPT_ID = os.getenv("SUMMARY_PROMPT_ID", COMPACT_CLINICAL_SUMMARY_PROMPT_ID)
+
+SUMMARY_INSTRUCTION = build_schema_instruction(
+    schema_model=CompactClinicalSummary,
+    config=get_prompt_profile(SUMMARY_PROMPT_ID),
+    transcript_state_key=TRANSCRIPT_STATE_KEY,
+)
 
 
 def _extract_audio_path_from_user_content(user_content: object | None) -> str | None:
@@ -121,60 +124,7 @@ summary_agent = LlmAgent(
     ),
     name="summary_step",
     description="Builds a compact clinical summary JSON from transcript text.",
-    instruction=f"""
-You are the clinical summarization step in a deterministic pipeline.
-
-Transcript text (from previous step):
-{{transcript_text?}}
-
-Task:
-- Create a compact clinical summary from the transcript.
-
-Field mapping guidance:
-- `patient_complaint`: the main presenting complaint (Leitsymptom/Hauptbeschwerde)
-  at this visit, expressed as a short German phrase or sentence.
-- Extract `patient_complaint` from patient statements and clinician intake text,
-  especially early dialogue (e.g., pain, burning, swelling, walking difficulty).
-- `findings`: objective and relevant clinical findings/exam/lab context.
-
-Long-transcript handling:
-- For long transcripts, first identify the chief complaint from the opening
-  part of the conversation, then summarize findings/diagnosis/next_steps from
-  the full transcript.
-
-Output rules:
-- Respond with only a JSON object.
-- Do not wrap JSON in markdown fences.
-- Do not add explanations before or after JSON.
-- All JSON string values must be in German (Deutsch, de-DE).
-- If the transcript includes English fragments, translate those fragments to natural German medical language.
-- Keep clinical meaning, numbers, units, medication names, and timing unchanged.
-- Use null when information is missing.
-- Do not invent facts not supported by the transcript.
-- Language must be strictly German for every JSON string value; no English fragments are allowed.
-- `patient_complaint` may be null, but ONLY if the transcript truly contains no
-  presenting complaint at all.
-
-Consistency check before final answer:
-- If symptom language appears anywhere (e.g., Schmerz, Brennen, Schwellung,
-  Ulkus, Gehbeschwerden, Taubheit), `patient_complaint` must not be null.
-- If `findings` contains complaint-like symptom text and `patient_complaint`
-  is null, move a concise complaint statement into `patient_complaint`.
-
-Example:
-Input transcript excerpt:
-"... Der rechte Fuss brennt wie Feuer, ich hinke staerker seit drei Tagen ..."
-Valid output fragment:
-{{
-  "patient_complaint": "Seit drei Tagen zunehmende Schmerzen und Brennen im rechten Vorfuss mit Gehbehinderung",
-  "findings": "...",
-  "diagnosis": "...",
-  "next_steps": "..."
-}}
-
-Required JSON schema:
-{SUMMARY_SCHEMA}
-""".strip(),
+    instruction=SUMMARY_INSTRUCTION,
     output_schema=CompactClinicalSummary,
     output_key=SUMMARY_STATE_KEY,
 )
