@@ -5,7 +5,7 @@
 ![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)
 ![Google ADK](https://img.shields.io/badge/Google-ADK-4285F4?logo=google)
 
-A Docker-first demo for **German medical dictation**: upload audio, get a structured clinical summary as JSON — fully local, no cloud API keys needed.
+A Docker-first demo for German medical dictation: upload audio, get a structured clinical summary as JSON - fully local, no cloud API keys required.
 
 Built with a Python backend (Google ADK agent), local speech-to-text (faster-whisper), Ollama for LLM summarization, and a Next.js frontend.
 
@@ -27,19 +27,20 @@ Built with a Python backend (Google ADK agent), local speech-to-text (faster-whi
 
 ## Features
 
-- **Local-first** — runs entirely on your machine, no cloud API keys required
-- **German medical speech-to-text** using faster-whisper
-- **LLM-powered clinical summarization** — structured JSON output via Ollama
-- **Google ADK agent framework** with tool-calling and session management
-- **One-command Docker Compose setup** with parallel builds
-- **Interactive Next.js frontend** for audio upload and result display
+- Local-first: runs entirely on your machine
+- German medical speech-to-text using faster-whisper
+- LLM-powered clinical summarization with structured JSON output via Ollama
+- Deterministic ADK pipeline: direct transcription step + structured summary step
+- Schema-driven prompt management for summary generation
+- One-command Docker Compose setup
+- Interactive Next.js frontend for upload, progress, and results
 
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
 | Agent Framework | [Google ADK](https://github.com/google/adk-python) |
-| Speech-to-Text | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (German medical variant) |
+| Speech-to-Text | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) |
 | LLM | [Ollama](https://ollama.com/) (`qwen2.5:1.5b` default) |
 | Backend | Python 3.13, [uv](https://docs.astral.sh/uv/) |
 | Frontend | Next.js 15, React 19 |
@@ -56,18 +57,18 @@ flowchart TD
     whisper["local Whisper model\ninside backend"]
 
     user --> frontend
-    frontend -->|"POST /run and session APIs"| backend
+    frontend -->|"POST /apps/.../sessions + POST /run_sse"| backend
     backend -->|"LiteLlm via ollama_chat"| ollama
     backend --> whisper
 ```
 
 ## What It Does
 
-1. Upload an MP3 or WAV file with a German medical dictation.
-2. The frontend sends the audio (base64-encoded) to the ADK backend via `/run_sse`.
-3. The agent calls a transcription tool that runs Whisper on the audio.
-4. The transcript is sent to Ollama for structured extraction.
-5. The agent returns a `CompactClinicalSummary` JSON object with:
+1. Upload an MP3 or WAV file with German medical dictation.
+2. Frontend creates an ADK session and sends audio to backend via `/run_sse`.
+3. Deterministic transcription step runs faster-whisper on the uploaded artifact.
+4. Summary step sends transcript text to Ollama and returns `CompactClinicalSummary` JSON.
+5. Frontend streams progress and shows final JSON fields:
    - `patient_complaint`
    - `findings`
    - `diagnosis`
@@ -87,7 +88,8 @@ No local Python or Node setup is required for the main workflow.
 bash setup.sh
 ```
 
-This script parallelizes image pulls, builds, and Ollama model downloads for a faster first run.
+This script parallelizes pulls/builds and model download for a faster first run.
+On Windows, run it from Git Bash or WSL (not from plain `cmd.exe`).
 
 ### Standard start
 
@@ -108,17 +110,17 @@ If you see an error mentioning `dockerDesktopLinuxEngine` or `The system cannot 
 
 ### Notes
 
-- On first startup, `ollama-init` pulls the configured Ollama model automatically.
-- The first transcription request can be slow because the Whisper model must be downloaded and cached.
-- The default LLM is `qwen2.5:1.5b`, a lightweight model well-suited for local agent workflows and structured JSON output.
+- `ollama-init` pulls the configured Ollama model on first startup.
+- First transcription can be slow because Whisper artifacts must be downloaded/cached.
+- Default LLM is `qwen2.5:1.5b`.
 
 ## Docker Services
 
 ### `frontend`
 
 - Built from [`frontend/Dockerfile`](frontend/Dockerfile)
-- Runs the standalone Next.js build (`node server.js`)
-- Proxies upload requests to the ADK backend
+- Runs standalone Next.js (`node server.js`)
+- Upload route calls ADK backend endpoints
 
 ### `backend`
 
@@ -133,25 +135,35 @@ uv run adk api_server --host 0.0.0.0 --port 8000
 
 ### `ollama`
 
-- Uses the official `ollama/ollama` image
+- Uses official `ollama/ollama` image
 - Stores model data in a Docker volume
 
 ## Configuration
 
-The compose file supports these environment variables:
+| Variable | Default | Used By | Description |
+|---|---|---|---|
+| `OLLAMA_MODEL` | `qwen2.5:1.5b` | backend, ollama-init | Ollama model name |
+| `OLLAMA_API_BASE` | `http://ollama:11434` | backend | Ollama API base inside Docker network |
+| `WHISPER_MODEL` | `base` | backend | faster-whisper model size |
+| `WHISPER_DEVICE` | `cpu` | backend | Whisper device (`cpu` or `cuda`) |
+| `WHISPER_BEAM_SIZE` | `3` | backend | Whisper beam width |
+| `ADK_API_BASE` | `http://backend:8000` | frontend | ADK backend base URL |
+| `SUMMARY_PROMPT_ID` | `compact_clinical_summary.v1` | backend | Prompt profile ID for schema-driven summary instructions |
+| `MAX_AUDIO_UPLOAD_BYTES` | `52428800` (50MB) | frontend | Max uploaded audio size |
+| `MAX_TRANSCRIBE_REQUEST_BYTES` | `MAX_AUDIO_UPLOAD_BYTES + 1MB` | frontend | Max request payload size |
+| `MAX_CONCURRENT_TRANSCRIPTIONS` | `2` | frontend | Per-frontend process concurrency limit |
 
-| Variable | Default | Description |
-|---|---|---|
-| `OLLAMA_MODEL` | `qwen2.5:1.5b` | Ollama model name used for the ADK agent |
-| `OLLAMA_API_BASE` | `http://ollama:11434` | Ollama API base URL used inside the backend container |
-| `WHISPER_MODEL` | `base` | faster-whisper model size; use `small` or `medium` on 16GB+ RAM |
-| `WHISPER_DEVICE` | `cpu` | Whisper runtime device, e.g. `cpu` or `cuda` |
-| `WHISPER_BEAM_SIZE` | `3` | Whisper beam search width; use `5` on 16GB+ RAM |
-| `ADK_API_BASE` | `http://backend:8000` | Backend URL used by the frontend container |
+Environment variables are read on process/container start. After changing limits in `.env` or Compose config, recreate the affected container(s):
+
+```bash
+docker compose up -d --force-recreate frontend
+# if backend env vars changed:
+docker compose up -d --force-recreate backend
+```
 
 ## Local Development
 
-Docker is the primary workflow, but the backend and frontend can also be run locally.
+Docker is the primary workflow, but backend/frontend can also run locally.
 
 ### Backend with `uv`
 
@@ -161,21 +173,18 @@ uv sync
 uv run python main.py ./medisprache/fixtures/sample_audio/sample_01_bronchitis.mp3
 ```
 
-Run the ADK API server locally:
+Run ADK API server locally:
 
 ```bash
 cd backend
 uv run adk api_server --host 0.0.0.0 --port 8000
 ```
 
-### Testing the CLI with `adk run`
-
-Use the interactive ADK CLI to chat with the agent (transcribe/summarize flows work when you refer to local files or uploads):
+### Testing with `adk run`
 
 ```bash
 cd backend
 
-# Set environment variables:
 # Windows (PowerShell)
 $env:OLLAMA_API_BASE = "http://localhost:11434"
 $env:OLLAMA_MODEL = "qwen2.5:1.5b"
@@ -184,44 +193,15 @@ $env:OLLAMA_MODEL = "qwen2.5:1.5b"
 export OLLAMA_API_BASE=http://localhost:11434
 export OLLAMA_MODEL=qwen2.5:1.5b
 
-# Ensure Ollama is running (e.g. docker compose up -d ollama)
 uv run adk run medisprache
 ```
 
-From the prompt you can type things like:
-
-- *Transcribe and summarize the audio at `/path/to/file.mp3`.*
-- Or use the session to upload artifacts and ask the agent to transcribe them.
-
-Use `exit` to quit. Optional flags:
-
-- `--save_session` — save session to `.session.json` on exit
-- `--session_id my_session` — session ID when saving
-- `--resume medisprache/my_session.session.json` — resume a saved session
-- `--replay input.json` — run queries from a JSON file (non-interactive)
-- `--session_service_uri memory://` — use in-memory session (default)
-- `--artifact_service_uri memory://` — use in-memory artifacts
-
 ### Testing with `adk web`
-
-Run the ADK web UI (dev-only, not for production) to chat with the agent in the browser:
 
 ```bash
 cd backend
-
-# Set environment variables:
-# Windows (PowerShell)
-$env:OLLAMA_API_BASE = "http://localhost:11434"
-$env:OLLAMA_MODEL = "qwen2.5:1.5b"
-
-# Linux / macOS
-export OLLAMA_API_BASE=http://localhost:11434
-export OLLAMA_MODEL=qwen2.5:1.5b
-
 uv run adk web --port 8000
 ```
-
-Open [http://localhost:8000](http://localhost:8000), pick the agent in the UI, and send messages. Use a different port if 8000 is already in use (e.g. `--port 8080`).
 
 ### Frontend locally
 
@@ -231,7 +211,7 @@ npm install
 npm run dev
 ```
 
-The frontend reads `ADK_API_BASE` from the environment:
+Set backend URL if needed:
 
 ```bash
 # Windows (PowerShell)
@@ -243,26 +223,27 @@ export ADK_API_BASE=http://localhost:8000
 
 ## API Notes
 
-The frontend talks to the backend using ADK's exposed endpoints:
+Frontend talks to backend with ADK endpoints:
 
-- `POST /apps/{app}/users/{user}/sessions/{session}` — create a session
-- `POST /run_sse` — stream agent execution via Server-Sent Events
+- `POST /apps/{app}/users/{user}/sessions/{session}`
+- `POST /run_sse`
 
-The backend app name is `medisprache`.
+Backend app name is `medisprache`.
 
 ## Important Files
 
-- [`backend/medisprache/agent.py`](backend/medisprache/agent.py): defines `root_agent` and the ADK `app`
-- [`backend/medisprache/tools/transcribe_audio.py`](backend/medisprache/tools/transcribe_audio.py): Whisper transcription logic and ADK tools
-- [`backend/medisprache/plugins/ollama_bridge.py`](backend/medisprache/plugins/ollama_bridge.py): plugin that normalizes Ollama tool-call behavior for ADK
-- [`backend/main.py`](backend/main.py): local CLI entry point
-- [`docker-compose.yml`](docker-compose.yml): runs `frontend`, `backend`, and `ollama`
-- [`frontend/app/api/transcribe/route.js`](frontend/app/api/transcribe/route.js): server-side upload route that calls ADK
-- [`setup.sh`](setup.sh): parallel first-run setup script
+- [`backend/medisprache/agent.py`](backend/medisprache/agent.py): root ADK app and pipeline wiring
+- [`backend/medisprache/prompts/registry.py`](backend/medisprache/prompts/registry.py): prompt profiles (`SUMMARY_PROMPT_ID`)
+- [`backend/medisprache/prompts/schema_prompt.py`](backend/medisprache/prompts/schema_prompt.py): schema-driven instruction builder
+- [`backend/medisprache/schemas/clinical_summary.py`](backend/medisprache/schemas/clinical_summary.py): output schema definitions
+- [`backend/medisprache/tools/transcribe_audio.py`](backend/medisprache/tools/transcribe_audio.py): Whisper transcription tools
+- [`frontend/app/api/transcribe/route.js`](frontend/app/api/transcribe/route.js): upload + SSE bridging route
+- [`docker-compose.yml`](docker-compose.yml): frontend/backend/ollama services
+- [`setup.sh`](setup.sh): first-run helper script
 
 ## Troubleshooting
 
-### Docker engine is not running
+### Docker engine not running
 
 Symptom:
 
@@ -273,12 +254,10 @@ open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specifie
 Fix:
 
 1. Start Docker Desktop.
-2. Wait until Docker reports that the engine is running.
+2. Wait until the engine is ready.
 3. Run `docker compose up --build` again.
 
-### Backend is up but frontend cannot reach it
-
-Check:
+### Frontend cannot reach backend
 
 ```bash
 docker compose ps
@@ -286,25 +265,21 @@ docker compose logs backend
 docker compose logs frontend
 ```
 
-The frontend container should talk to the backend using `http://backend:8000`, not `localhost`.
+Frontend container should use `http://backend:8000`, not `localhost`.
 
-### ADK backend check
-
-Once running, verify the backend with:
+### Verify backend
 
 ```bash
 curl http://localhost:8000/list-apps
 ```
 
-You should see:
+Expected:
 
 ```json
 ["medisprache"]
 ```
 
-### `setup.sh` fails with `\r: command not found`
-
-This happens when the script has Windows-style line endings (CRLF). Fix:
+### `setup.sh` line-ending issue (`\r: command not found`)
 
 ```bash
 # PowerShell
@@ -315,8 +290,6 @@ sed -i 's/\r$//' setup.sh
 # or: dos2unix setup.sh
 ```
 
-The `.gitattributes` in this repo prevents this from recurring for new clones.
-
 ## Repository Layout
 
 ```text
@@ -326,7 +299,7 @@ backend/
   pyproject.toml
   medisprache/
     agent.py
-    plugins/
+    prompts/
     schemas/
     tests/
     tools/
@@ -338,3 +311,6 @@ docker-compose.yml
 setup.sh
 .gitattributes
 ```
+
+
+
