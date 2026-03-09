@@ -43,7 +43,7 @@ async def run_cli(audio_path: str) -> None:
     from google.adk.sessions.in_memory_session_service import InMemorySessionService
     from google.genai import types
 
-    from medisprache import app, root_agent
+    from medisprache import app
     from medisprache.schemas.clinical_summary import CompactClinicalSummary
 
     user_id = "cli"
@@ -75,12 +75,14 @@ async def run_cli(audio_path: str) -> None:
         new_message=message,
     ):
         if (
-            event.author == root_agent.name
+            event.author != "user"
             and event.is_final_response()
             and event.content
             and event.content.parts
         ):
-            final_text = "".join(part.text or "" for part in event.content.parts).strip()
+            candidate = "".join(part.text or "" for part in event.content.parts).strip()
+            if candidate:
+                final_text = candidate
 
     if not final_text:
         raise RuntimeError("The agent did not produce a final JSON response.")

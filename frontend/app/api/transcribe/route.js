@@ -277,8 +277,8 @@ export async function POST(request) {
         );
 
         const prompt =
-          "Transcribe the uploaded German medical dictation audio and return only JSON.\n" +
-          "Use the uploaded artifact tool if needed.";
+          "Transkribiere das hochgeladene deutsche medizinische Diktat und gib nur JSON zurueck.\n" +
+          "Nutze bei Bedarf das Tool fuer hochgeladene Artefakte.";
 
           const runResponse = await fetch(`${DEFAULT_ADK_API_BASE}/run_sse`, {
             method: "POST",
