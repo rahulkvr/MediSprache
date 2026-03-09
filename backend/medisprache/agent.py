@@ -130,6 +130,18 @@ Transcript text (from previous step):
 Task:
 - Create a compact clinical summary from the transcript.
 
+Field mapping guidance:
+- `patient_complaint`: the main presenting complaint (Leitsymptom/Hauptbeschwerde)
+  at this visit, expressed as a short German phrase or sentence.
+- Extract `patient_complaint` from patient statements and clinician intake text,
+  especially early dialogue (e.g., pain, burning, swelling, walking difficulty).
+- `findings`: objective and relevant clinical findings/exam/lab context.
+
+Long-transcript handling:
+- For long transcripts, first identify the chief complaint from the opening
+  part of the conversation, then summarize findings/diagnosis/next_steps from
+  the full transcript.
+
 Output rules:
 - Respond with only a JSON object.
 - Do not wrap JSON in markdown fences.
@@ -140,6 +152,25 @@ Output rules:
 - Use null when information is missing.
 - Do not invent facts not supported by the transcript.
 - Language must be strictly German for every JSON string value; no English fragments are allowed.
+- `patient_complaint` may be null, but ONLY if the transcript truly contains no
+  presenting complaint at all.
+
+Consistency check before final answer:
+- If symptom language appears anywhere (e.g., Schmerz, Brennen, Schwellung,
+  Ulkus, Gehbeschwerden, Taubheit), `patient_complaint` must not be null.
+- If `findings` contains complaint-like symptom text and `patient_complaint`
+  is null, move a concise complaint statement into `patient_complaint`.
+
+Example:
+Input transcript excerpt:
+"... Der rechte Fuss brennt wie Feuer, ich hinke staerker seit drei Tagen ..."
+Valid output fragment:
+{{
+  "patient_complaint": "Seit drei Tagen zunehmende Schmerzen und Brennen im rechten Vorfuss mit Gehbehinderung",
+  "findings": "...",
+  "diagnosis": "...",
+  "next_steps": "..."
+}}
 
 Required JSON schema:
 {SUMMARY_SCHEMA}
