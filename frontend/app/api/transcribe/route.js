@@ -232,7 +232,7 @@ export async function POST(request) {
       );
     }
 
-    const userId = randomUUID();
+    const userId = formData.get("userId") || randomUUID();
     const sessionId = randomUUID();
     const audioBytes = Buffer.from(await file.arrayBuffer());
     const encoder = new TextEncoder();
@@ -243,42 +243,42 @@ export async function POST(request) {
           controller.enqueue(buildNdjsonEvent(encoder, payload));
         };
 
-      const pushStage = (state, stage, message) => {
-        if (state.currentStage === stage && state.currentMessage === message) {
-          return;
-        }
-        state.currentStage = stage;
-        state.currentMessage = message;
-        send({ type: "stage", stage, message });
-      };
+        const pushStage = (state, stage, message) => {
+          if (state.currentStage === stage && state.currentMessage === message) {
+            return;
+          }
+          state.currentStage = stage;
+          state.currentMessage = message;
+          send({ type: "stage", stage, message });
+        };
 
-      const stageState = {
-        currentStage: "",
-        currentMessage: "",
-        transcribeStarted: false,
-        transcriptionDone: false,
-        summarizing: false,
-        latestText: "",
-        latestPartialText: "",
-      };
+        const stageState = {
+          currentStage: "",
+          currentMessage: "",
+          transcribeStarted: false,
+          transcriptionDone: false,
+          summarizing: false,
+          latestText: "",
+          latestPartialText: "",
+        };
 
-      try {
-        pushStage(
-          stageState,
-          "upload_received",
-          "Datei empfangen. ADK-Sitzung wird vorbereitet.",
-        );
+        try {
+          pushStage(
+            stageState,
+            "upload_received",
+            "Datei empfangen. ADK-Sitzung wird vorbereitet.",
+          );
 
-        await createSession(userId, sessionId);
-        pushStage(
-          stageState,
-          "session_created",
-          "Sitzung erstellt. Agent-Run wird gestartet.",
-        );
+          await createSession(userId, sessionId);
+          pushStage(
+            stageState,
+            "session_created",
+            "Sitzung erstellt. Agent-Run wird gestartet.",
+          );
 
-        const prompt =
-          "Transcribe the uploaded German medical dictation audio and return only JSON.\n" +
-          "Use the uploaded artifact tool if needed.";
+          const prompt =
+            "Transcribe the uploaded German medical dictation audio and return only JSON.\n" +
+            "Use the uploaded artifact tool if needed.";
 
           const runResponse = await fetch(`${DEFAULT_ADK_API_BASE}/run_sse`, {
             method: "POST",
@@ -311,94 +311,94 @@ export async function POST(request) {
             throw new Error(`ADK run_sse failed with status ${runResponse.status}.`);
           }
 
-        if (!runResponse.body) {
-          throw new Error("ADK run_sse returned an empty response body.");
-        }
-
-        pushStage(stageState, "agent_running", "Agent verarbeitet die Anfrage.");
-
-        const reader = runResponse.body.getReader();
-        const decoder = new TextDecoder();
-        let sseBuffer = "";
-
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) {
-            break;
+          if (!runResponse.body) {
+            throw new Error("ADK run_sse returned an empty response body.");
           }
 
-          sseBuffer += decoder.decode(value, { stream: true }).replace(/\r\n|\r/g, "\n");
-          const { frames, remaining } = parseSseFrames(sseBuffer);
-          sseBuffer = remaining;
+          pushStage(stageState, "agent_running", "Agent verarbeitet die Anfrage.");
 
-          for (const frame of frames) {
-            const event = parseSseDataFrame(frame);
-            if (!event) {
-              continue;
+          const reader = runResponse.body.getReader();
+          const decoder = new TextDecoder();
+          let sseBuffer = "";
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) {
+              break;
             }
 
-            const parts = event?.content?.parts;
-            if (Array.isArray(parts)) {
-              for (const part of parts) {
-                const functionCallName = getFunctionCallName(part);
-                if (
-                  functionCallName &&
-                  TRANSCRIBE_TOOL_NAMES.has(functionCallName) &&
-                  !stageState.transcribeStarted
-                ) {
-                  stageState.transcribeStarted = true;
-                  pushStage(
-                    stageState,
-                    "transcribing_audio",
-                    "Audio wird transkribiert.",
-                  );
-                }
+            sseBuffer += decoder.decode(value, { stream: true }).replace(/\r\n|\r/g, "\n");
+            const { frames, remaining } = parseSseFrames(sseBuffer);
+            sseBuffer = remaining;
 
-                const functionResponseName = getFunctionResponseName(part);
-                if (
-                  functionResponseName &&
-                  TRANSCRIBE_TOOL_NAMES.has(functionResponseName) &&
-                  !stageState.transcriptionDone
-                ) {
-                  stageState.transcriptionDone = true;
-                  pushStage(
-                    stageState,
-                    "transcription_done",
-                    "Transkription abgeschlossen.",
-                  );
+            for (const frame of frames) {
+              const event = parseSseDataFrame(frame);
+              if (!event) {
+                continue;
+              }
+
+              const parts = event?.content?.parts;
+              if (Array.isArray(parts)) {
+                for (const part of parts) {
+                  const functionCallName = getFunctionCallName(part);
+                  if (
+                    functionCallName &&
+                    TRANSCRIBE_TOOL_NAMES.has(functionCallName) &&
+                    !stageState.transcribeStarted
+                  ) {
+                    stageState.transcribeStarted = true;
+                    pushStage(
+                      stageState,
+                      "transcribing_audio",
+                      "Audio wird transkribiert.",
+                    );
+                  }
+
+                  const functionResponseName = getFunctionResponseName(part);
+                  if (
+                    functionResponseName &&
+                    TRANSCRIBE_TOOL_NAMES.has(functionResponseName) &&
+                    !stageState.transcriptionDone
+                  ) {
+                    stageState.transcriptionDone = true;
+                    pushStage(
+                      stageState,
+                      "transcription_done",
+                      "Transkription abgeschlossen.",
+                    );
+                    pushStage(
+                      stageState,
+                      "summarizing",
+                      "Klinische Zusammenfassung wird erstellt.",
+                    );
+                    stageState.summarizing = true;
+                  }
+                }
+              }
+
+              const text = extractTextFromAdkEvent(event);
+              if (text) {
+                stageState.latestText = text;
+                const isPartial = event?.partial === true || event?.isPartial === true;
+                if (isPartial && text !== stageState.latestPartialText) {
+                  stageState.latestPartialText = text;
+                  send({ type: "partial", text });
+                }
+                if (stageState.transcriptionDone && !stageState.summarizing) {
+                  stageState.summarizing = true;
                   pushStage(
                     stageState,
                     "summarizing",
                     "Klinische Zusammenfassung wird erstellt.",
                   );
-                  stageState.summarizing = true;
                 }
               }
             }
-
-            const text = extractTextFromAdkEvent(event);
-            if (text) {
-              stageState.latestText = text;
-              const isPartial = event?.partial === true || event?.isPartial === true;
-              if (isPartial && text !== stageState.latestPartialText) {
-                stageState.latestPartialText = text;
-                send({ type: "partial", text });
-              }
-              if (stageState.transcriptionDone && !stageState.summarizing) {
-                stageState.summarizing = true;
-                pushStage(
-                  stageState,
-                  "summarizing",
-                  "Klinische Zusammenfassung wird erstellt.",
-                );
-              }
-            }
           }
-        }
 
-        const summary = parseSummaryJson(stageState.latestText);
-        pushStage(stageState, "completed", "Fertig.");
-        send({ type: "result", summary });
+          const summary = parseSummaryJson(stageState.latestText);
+          pushStage(stageState, "completed", "Fertig.");
+          send({ type: "result", summary });
         } catch (error) {
           console.error(
             "Transcription stream failed:",

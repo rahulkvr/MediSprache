@@ -1,6 +1,13 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+// Adding a simple UUID generator since 'crypto.randomUUID' is not universally available in old browsers
+// without polyfills, but for this app it effectively persists the ID locally.
+function generateUUID() {
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c =>
+    (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+  );
+}
 
 const ACCEPTED_TYPES = ".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav";
 const STAGE_LABELS = {
@@ -523,8 +530,65 @@ export default function HomePage() {
   const [file, setFile] = useState(null);
   const [stage, setStage] = useState("");
   const [partialText, setPartialText] = useState("");
+  const [userId, setUserId] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
+
+  const loadHistory = useCallback(async (uid) => {
+    try {
+      const res = await fetch(`/api/history?userId=${uid}`);
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data.sessions || []);
+      }
+    } catch (err) {
+      console.error("Failed to load history:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Attempt to load existing user ID from localStorage
+    const storedUserId = localStorage.getItem("medisprache_user_id");
+    let uid = storedUserId;
+    if (!uid) {
+      uid = generateUUID();
+      localStorage.setItem("medisprache_user_id", uid);
+    }
+    setUserId(uid);
+    loadHistory(uid);
+  }, [loadHistory]);
+
+  const handleLoadSession = async (sessionId) => {
+    setError("");
+    setResult(null);
+    setIsSubmitting(true);
+    setStage("Lade Historie...");
+    setPartialText("");
+    setIsHistoryPanelOpen(false);
+
+    try {
+      const res = await fetch(`/api/session?userId=${userId}&sessionId=${sessionId}`);
+
+      if (!res.ok) {
+        throw new Error("Fehler beim Laden der Sitzung.");
+      }
+
+      const data = await res.json();
+      setResult(data.summary);
+      setActiveTab("summary");
+    } catch (err) {
+      setError(err.message || "An unexpected error occurred loading session.");
+    } finally {
+      setIsSubmitting(false);
+      setStage("");
+    }
+  };
 
   const handleSubmit = async ({ file }) => {
+    if (!userId) {
+      setError("Initialisiere Benutzer... Bitte kurz warten.");
+      return;
+    }
     setError("");
     setResult(null);
     setIsSubmitting(true);
@@ -534,6 +598,7 @@ export default function HomePage() {
     try {
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("userId", userId);
 
       const res = await fetch("/api/transcribe", {
         method: "POST",
@@ -627,6 +692,7 @@ export default function HomePage() {
       setError(err.message || "An unexpected error occurred.");
     } finally {
       setIsSubmitting(false);
+      loadHistory(userId); // Refresh history after transcribing
     }
   };
 
@@ -662,9 +728,19 @@ export default function HomePage() {
         {error && <ErrorAlert message={error} />}
 
         <div className="upload-view">
-          <header className="page-header">
+          <header className="page-header" style={{ position: "relative" }}>
             <h1 className="page-title">MediSprache</h1>
             <p className="page-subtitle">Medizinische Diktat-Transkription</p>
+            {userId && (
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ position: "absolute", right: 0, top: 0 }}
+                onClick={() => setIsHistoryPanelOpen(!isHistoryPanelOpen)}
+              >
+                Letzte Diktate ({history.length})
+              </button>
+            )}
           </header>
 
           <UploadSection
@@ -711,6 +787,59 @@ export default function HomePage() {
               </button>
             </div>
           </div>
+        )}
+
+        {isHistoryPanelOpen && (
+          <aside className="history-panel anim-slide-up" style={{
+            position: "fixed",
+            right: "0",
+            top: "0",
+            height: "100%",
+            width: "300px",
+            backgroundColor: "white",
+            boxShadow: "-4px 0 15px rgba(0,0,0,0.1)",
+            padding: "2rem",
+            zIndex: 100,
+            overflowY: "auto"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
+              <h2 style={{ fontSize: "1.25rem", fontWeight: "600", color: "var(--accent-teal)" }}>Letzte Diktate</h2>
+              <button onClick={() => setIsHistoryPanelOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.5rem" }}>&times;</button>
+            </div>
+
+            {history.length === 0 ? (
+              <p style={{ color: "var(--text-muted)" }}>Noch keine Diktate vorhanden.</p>
+            ) : (
+              <ul style={{ listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: "1rem" }}>
+                {history.map(session => (
+                  <li key={session.id}>
+                    <button
+                      onClick={() => handleLoadSession(session.id)}
+                      style={{
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "1rem",
+                        backgroundColor: "var(--surface)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        transition: "all 0.2s"
+                      }}
+                      onMouseOver={(e) => e.currentTarget.style.borderColor = "var(--accent-teal)"}
+                      onMouseOut={(e) => e.currentTarget.style.borderColor = "var(--border)"}
+                    >
+                      <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>
+                        {new Date(session.created_at).toLocaleString('de-DE')}
+                      </div>
+                      <div style={{ fontWeight: "500", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        Sitzung {session.id.substring(0, 8)}...
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </aside>
         )}
       </main>
     </div>
