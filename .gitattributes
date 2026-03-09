@@ -1,4 +1,4 @@
-﻿# Global: normalize all text files to LF on check-in
+# Global: normalize all text files to LF on check-in
 * text=auto eol=lf
 
 # Shell scripts must always use LF
