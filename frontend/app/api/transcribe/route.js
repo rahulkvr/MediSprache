@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 const APP_NAME = "medisprache";
 const DEFAULT_ADK_API_BASE = process.env.ADK_API_BASE || "http://backend:8000";
 const ALLOWED_EXTENSIONS = new Set([".mp3", ".wav"]);
-const MAX_AUDIO_BYTES = Number(process.env.MAX_AUDIO_UPLOAD_BYTES || 10 * 1024 * 1024);
+const MAX_AUDIO_BYTES = Number(process.env.MAX_AUDIO_UPLOAD_BYTES || 50 * 1024 * 1024);
 const MAX_REQUEST_BYTES = Number(
   process.env.MAX_TRANSCRIBE_REQUEST_BYTES || MAX_AUDIO_BYTES + 1024 * 1024,
 );
