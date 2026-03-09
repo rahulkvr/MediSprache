@@ -1,11 +1,49 @@
 # MediSprache
 
-MediSprache is a Docker-first demo for German medical dictation:
+![Docker](https://img.shields.io/badge/Docker-Compose-blue?logo=docker)
+![Python](https://img.shields.io/badge/Python-3.13-blue?logo=python)
+![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)
+![Google ADK](https://img.shields.io/badge/Google-ADK-4285F4?logo=google)
 
-- a Python backend built with Google ADK
-- local speech-to-text using a German medical Whisper variant
-- Ollama for JSON clinical summarization
-- a small Next.js frontend for audio upload and JSON display
+A Docker-first demo for **German medical dictation**: upload audio, get a structured clinical summary as JSON — fully local, no cloud API keys needed.
+
+Built with a Python backend (Google ADK agent), local speech-to-text (faster-whisper), Ollama for LLM summarization, and a Next.js frontend.
+
+## Table of Contents
+
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Architecture](#architecture)
+- [What It Does](#what-it-does)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Docker Services](#docker-services)
+- [Configuration](#configuration)
+- [Local Development](#local-development)
+- [API Notes](#api-notes)
+- [Important Files](#important-files)
+- [Troubleshooting](#troubleshooting)
+- [Repository Layout](#repository-layout)
+
+## Features
+
+- **Local-first** — runs entirely on your machine, no cloud API keys required
+- **German medical speech-to-text** using faster-whisper
+- **LLM-powered clinical summarization** — structured JSON output via Ollama
+- **Google ADK agent framework** with tool-calling and session management
+- **One-command Docker Compose setup** with parallel builds
+- **Interactive Next.js frontend** for audio upload and result display
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Agent Framework | [Google ADK](https://github.com/google/adk-python) |
+| Speech-to-Text | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (German medical variant) |
+| LLM | [Ollama](https://ollama.com/) (`qwen2.5:1.5b` default) |
+| Backend | Python 3.13, [uv](https://docs.astral.sh/uv/) |
+| Frontend | Next.js 15, React 19 |
+| Infrastructure | Docker Compose |
 
 ## Architecture
 
@@ -26,11 +64,10 @@ flowchart TD
 ## What It Does
 
 1. Upload an MP3 or WAV file with a German medical dictation.
-2. The frontend sends the file to the ADK backend using ADK's own REST API shape.
-3. ADK stores the uploaded file as an artifact for the current session.
-4. The agent calls a transcription tool that reads the artifact and runs Whisper.
-5. The transcript is sent to Ollama.
-6. The agent returns a `CompactClinicalSummary` JSON object with:
+2. The frontend sends the audio (base64-encoded) to the ADK backend via `/run_sse`.
+3. The agent calls a transcription tool that runs Whisper on the audio.
+4. The transcript is sent to Ollama for structured extraction.
+5. The agent returns a `CompactClinicalSummary` JSON object with:
    - `patient_complaint`
    - `findings`
    - `diagnosis`
@@ -38,29 +75,38 @@ flowchart TD
 
 ## Prerequisites
 
-- Docker
-- Docker Compose
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (includes Docker Compose)
 
 No local Python or Node setup is required for the main workflow.
 
-## Docker Quickstart
+## Quick Start
 
-Start the full stack:
+### First-time setup (recommended)
+
+```bash
+bash setup.sh
+```
+
+This script parallelizes image pulls, builds, and Ollama model downloads for a faster first run.
+
+### Standard start
 
 ```bash
 docker compose up --build
 ```
 
-If you see an error mentioning `dockerDesktopLinuxEngine` or `The system cannot find the file specified`, Docker Desktop is not running yet. Start Docker Desktop first, wait for the engine to be ready, then rerun `docker compose up --build`.
+If you see an error mentioning `dockerDesktopLinuxEngine` or `The system cannot find the file specified`, Docker Desktop is not running yet. Start Docker Desktop first, wait for the engine to be ready, then try again.
 
-Services:
+### Services
 
-- Frontend: [http://localhost:3000](http://localhost:3000)
-- ADK backend: [http://localhost:8000](http://localhost:8000)
-- ADK Swagger docs: [http://localhost:8000/docs](http://localhost:8000/docs)
-- Ollama: `http://localhost:11434`
+| Service | URL |
+|---|---|
+| Frontend | [http://localhost:3000](http://localhost:3000) |
+| ADK Backend | [http://localhost:8000](http://localhost:8000) |
+| ADK Swagger Docs | [http://localhost:8000/docs](http://localhost:8000/docs) |
+| Ollama | `http://localhost:11434` |
 
-Notes:
+### Notes
 
 - On first startup, `ollama-init` pulls the configured Ollama model automatically.
 - The first transcription request can be slow because the Whisper model must be downloaded and cached.
@@ -71,7 +117,7 @@ Notes:
 ### `frontend`
 
 - Built from [`frontend/Dockerfile`](frontend/Dockerfile)
-- Runs the Next.js production app
+- Runs the standalone Next.js build (`node server.js`)
 - Proxies upload requests to the ADK backend
 
 ### `backend`
@@ -100,18 +146,19 @@ The compose file supports these environment variables:
 | `OLLAMA_API_BASE` | `http://ollama:11434` | Ollama API base URL used inside the backend container |
 | `WHISPER_MODEL` | `base` | faster-whisper model size; use `small` or `medium` on 16GB+ RAM |
 | `WHISPER_DEVICE` | `cpu` | Whisper runtime device, e.g. `cpu` or `cuda` |
+| `WHISPER_BEAM_SIZE` | `3` | Whisper beam search width; use `5` on 16GB+ RAM |
 | `ADK_API_BASE` | `http://backend:8000` | Backend URL used by the frontend container |
 
 ## Local Development
 
-Docker is the primary workflow, but the backend can still be run locally.
+Docker is the primary workflow, but the backend and frontend can also be run locally.
 
 ### Backend with `uv`
 
 ```bash
 cd backend
 uv sync
-uv run python main.py ".\\medisprache\\fixtures\\sample_audio\\sample_01_bronchitis.mp3"
+uv run python main.py ./medisprache/fixtures/sample_audio/sample_01_bronchitis.mp3
 ```
 
 Run the ADK API server locally:
@@ -127,15 +174,23 @@ Use the interactive ADK CLI to chat with the agent (transcribe/summarize flows w
 
 ```bash
 cd backend
-# Ensure Ollama is running (e.g. Docker: docker compose up -d ollama)
-set OLLAMA_API_BASE=http://localhost:11434
-set OLLAMA_MODEL=qwen2.5:1.5b
+
+# Set environment variables:
+# Windows (PowerShell)
+$env:OLLAMA_API_BASE = "http://localhost:11434"
+$env:OLLAMA_MODEL = "qwen2.5:1.5b"
+
+# Linux / macOS
+export OLLAMA_API_BASE=http://localhost:11434
+export OLLAMA_MODEL=qwen2.5:1.5b
+
+# Ensure Ollama is running (e.g. docker compose up -d ollama)
 uv run adk run medisprache
 ```
 
 From the prompt you can type things like:
 
-- *Transcribe and summarize the audio at `C:\path\to\file.mp3`.* (uses server-local tool if path is on the same machine)
+- *Transcribe and summarize the audio at `/path/to/file.mp3`.*
 - Or use the session to upload artifacts and ask the agent to transcribe them.
 
 Use `exit` to quit. Optional flags:
@@ -144,7 +199,7 @@ Use `exit` to quit. Optional flags:
 - `--session_id my_session` — session ID when saving
 - `--resume medisprache/my_session.session.json` — resume a saved session
 - `--replay input.json` — run queries from a JSON file (non-interactive)
-- `--session_service_uri memory://` — use in-memory session (default when not using `--use_local_storage`)
+- `--session_service_uri memory://` — use in-memory session (default)
 - `--artifact_service_uri memory://` — use in-memory artifacts
 
 ### Testing with `adk web`
@@ -153,19 +208,20 @@ Run the ADK web UI (dev-only, not for production) to chat with the agent in the 
 
 ```bash
 cd backend
-set OLLAMA_API_BASE=http://localhost:11434
-set OLLAMA_MODEL=qwen2.5:1.5b
+
+# Set environment variables:
+# Windows (PowerShell)
+$env:OLLAMA_API_BASE = "http://localhost:11434"
+$env:OLLAMA_MODEL = "qwen2.5:1.5b"
+
+# Linux / macOS
+export OLLAMA_API_BASE=http://localhost:11434
+export OLLAMA_MODEL=qwen2.5:1.5b
+
 uv run adk web --port 8000
 ```
 
 Open [http://localhost:8000](http://localhost:8000), pick the agent in the UI, and send messages. Use a different port if 8000 is already in use (e.g. `--port 8080`).
-
-If you run locally outside Docker, point the backend to your local Ollama daemon:
-
-```bash
-set OLLAMA_API_BASE=http://localhost:11434
-set OLLAMA_MODEL=qwen2.5:1.5b
-```
 
 ### Frontend locally
 
@@ -175,18 +231,22 @@ npm install
 npm run dev
 ```
 
-Then set:
+The frontend reads `ADK_API_BASE` from the environment:
 
 ```bash
-set ADK_API_BASE=http://localhost:8000
+# Windows (PowerShell)
+$env:ADK_API_BASE = "http://localhost:8000"
+
+# Linux / macOS
+export ADK_API_BASE=http://localhost:8000
 ```
 
 ## API Notes
 
 The frontend talks to the backend using ADK's exposed endpoints:
 
-- `POST /apps/{app}/users/{user}/sessions/{session}`
-- `POST /run`
+- `POST /apps/{app}/users/{user}/sessions/{session}` — create a session
+- `POST /run_sse` — stream agent execution via Server-Sent Events
 
 The backend app name is `medisprache`.
 
@@ -198,6 +258,7 @@ The backend app name is `medisprache`.
 - [`backend/main.py`](backend/main.py): local CLI entry point
 - [`docker-compose.yml`](docker-compose.yml): runs `frontend`, `backend`, and `ollama`
 - [`frontend/app/api/transcribe/route.js`](frontend/app/api/transcribe/route.js): server-side upload route that calls ADK
+- [`setup.sh`](setup.sh): parallel first-run setup script
 
 ## Troubleshooting
 
@@ -241,6 +302,21 @@ You should see:
 ["medisprache"]
 ```
 
+### `setup.sh` fails with `\r: command not found`
+
+This happens when the script has Windows-style line endings (CRLF). Fix:
+
+```bash
+# PowerShell
+(Get-Content setup.sh -Raw) -replace "`r`n", "`n" | Set-Content setup.sh -NoNewline
+
+# Linux / macOS
+sed -i 's/\r$//' setup.sh
+# or: dos2unix setup.sh
+```
+
+The `.gitattributes` in this repo prevents this from recurring for new clones.
+
 ## Repository Layout
 
 ```text
@@ -252,9 +328,13 @@ backend/
     agent.py
     plugins/
     schemas/
+    tests/
     tools/
 frontend/
   Dockerfile
   app/
+    api/transcribe/route.js
 docker-compose.yml
+setup.sh
+.gitattributes
 ```
