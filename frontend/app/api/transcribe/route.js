@@ -93,6 +93,10 @@ function getFunctionResponseName(part) {
   return part?.functionResponse?.name || part?.function_response?.name || null;
 }
 
+function getStateDelta(event) {
+  return event?.actions?.stateDelta || event?.actions?.state_delta || null;
+}
+
 function parseSseFrames(buffer) {
   const frames = [];
   let remaining = buffer;
@@ -338,6 +342,44 @@ export async function POST(request) {
             }
 
             const parts = event?.content?.parts;
+            const author = event?.author || "";
+            const stateDelta = getStateDelta(event);
+
+            if (author === "transcription_step" && !stageState.transcribeStarted) {
+              stageState.transcribeStarted = true;
+              pushStage(
+                stageState,
+                "transcribing_audio",
+                "Audio wird transkribiert.",
+              );
+            }
+
+            if (
+              !stageState.transcriptionDone &&
+              typeof stateDelta?.transcript_text === "string"
+            ) {
+              stageState.transcriptionDone = true;
+              pushStage(
+                stageState,
+                "transcription_done",
+                "Transkription abgeschlossen.",
+              );
+              pushStage(
+                stageState,
+                "summarizing",
+                "Klinische Zusammenfassung wird erstellt.",
+              );
+              stageState.summarizing = true;
+            }
+
+            if (author === "summary_step" && !stageState.summarizing) {
+              stageState.summarizing = true;
+              pushStage(
+                stageState,
+                "summarizing",
+                "Klinische Zusammenfassung wird erstellt.",
+              );
+            }
             if (Array.isArray(parts)) {
               for (const part of parts) {
                 const functionCallName = getFunctionCallName(part);
@@ -442,3 +484,4 @@ export const maxDuration = 300;
   This route intentionally returns NDJSON over chunked HTTP so the browser can
   display ADK progress stages while run_sse events arrive.
 */
+

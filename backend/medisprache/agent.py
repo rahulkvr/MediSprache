@@ -2,18 +2,21 @@ from __future__ import annotations
 
 import json
 import os
+import re
+from typing import AsyncGenerator
 
 from google.adk.agents import LlmAgent, SequentialAgent
+from google.adk.agents.base_agent import BaseAgent
+from google.adk.agents.context import Context
+from google.adk.agents.invocation_context import InvocationContext
 from google.adk.apps.app import App
+from google.adk.events.event import Event
+from google.adk.events.event_actions import EventActions
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.plugins.save_files_as_artifacts_plugin import SaveFilesAsArtifactsPlugin
 
-from medisprache.plugins import OllamaToolCallBridgePlugin
 from medisprache.schemas.clinical_summary import CompactClinicalSummary
-from medisprache.tools.transcribe_audio import (
-    transcribe_audio,
-    transcribe_uploaded_artifact,
-)
+from medisprache.tools.transcribe_audio import transcribe_audio, transcribe_uploaded_artifact
 
 APP_NAME = "medisprache"
 DEFAULT_OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
@@ -26,31 +29,88 @@ SUMMARY_SCHEMA = json.dumps(
 TRANSCRIPT_STATE_KEY = "transcript_text"
 SUMMARY_STATE_KEY = "clinical_summary"
 
-transcription_agent = LlmAgent(
-    model=LiteLlm(
-        model=f"ollama_chat/{DEFAULT_OLLAMA_MODEL}",
-        api_base=DEFAULT_OLLAMA_API_BASE,
-        temperature=0,
-    ),
+
+def _extract_audio_path_from_user_content(user_content: object | None) -> str | None:
+    """Extract a server-local audio path from user text when no artifact exists."""
+    if user_content is None:
+        return None
+
+    parts = getattr(user_content, "parts", None)
+    if not parts:
+        return None
+
+    combined_text = " ".join(
+        part_text.strip()
+        for part in parts
+        if (part_text := getattr(part, "text", None))
+    )
+    if not combined_text:
+        return None
+
+    quoted_match = re.search(
+        r"""[\"']([^\"']+\.(?:mp3|wav|m4a|ogg|flac))[\"']""",
+        combined_text,
+        flags=re.IGNORECASE,
+    )
+    if quoted_match:
+        return quoted_match.group(1)
+
+    bare_match = re.search(
+        r"""([A-Za-z]:[^\s\"']+\.(?:mp3|wav|m4a|ogg|flac)|/[^\s\"']+\.(?:mp3|wav|m4a|ogg|flac))""",
+        combined_text,
+        flags=re.IGNORECASE,
+    )
+    if bare_match:
+        return bare_match.group(1).rstrip(".,)")
+
+    return None
+
+
+class DeterministicTranscriptionAgent(BaseAgent):
+    """Directly transcribe uploaded artifact/path without LLM tool selection."""
+
+    output_key: str = TRANSCRIPT_STATE_KEY
+
+    async def _run_async_impl(
+        self, ctx: InvocationContext
+    ) -> AsyncGenerator[Event, None]:
+        tool_context = Context(ctx)
+        artifact_names = await tool_context.list_artifacts()
+
+        if artifact_names:
+            transcription_result = await transcribe_uploaded_artifact(
+                tool_context=tool_context
+            )
+        else:
+            audio_path = _extract_audio_path_from_user_content(ctx.user_content)
+            if not audio_path:
+                raise ValueError(
+                    "No uploaded artifact found and no server-local audio path "
+                    "could be extracted from the user message."
+                )
+            transcription_result = transcribe_audio(audio_path=audio_path)
+
+        transcript_text = str(transcription_result.get("text", "")).strip()
+        if not transcript_text:
+            raise ValueError("Transcription returned empty text.")
+
+        yield Event(
+            invocation_id=ctx.invocation_id,
+            author=self.name,
+            branch=ctx.branch,
+            actions=EventActions(
+                state_delta={
+                    self.output_key: transcript_text,
+                }
+            ),
+        )
+
+
+transcription_agent = DeterministicTranscriptionAgent(
     name="transcription_step",
-    description="Transcribes German medical dictation audio into transcript text.",
-    instruction="""
-You are the transcription step in a deterministic clinical pipeline.
-
-Your job is to transcribe the user's medical dictation audio.
-
-Tool usage rules:
-- If the user references a server-local audio path, call `transcribe_audio`.
-- If the user uploaded an audio attachment or artifact, call `transcribe_uploaded_artifact`.
-- Call exactly one transcription tool per request.
-
-Output rules:
-- After the tool returns, extract and return only the transcript text (`text` field).
-- Do not return JSON.
-- Do not add commentary or metadata.
-""".strip(),
-    tools=[transcribe_audio, transcribe_uploaded_artifact],
-    output_key=TRANSCRIPT_STATE_KEY,
+    description=(
+        "Deterministically transcribes the uploaded or referenced audio into text."
+    ),
 )
 
 summary_agent = LlmAgent(
@@ -60,21 +120,26 @@ summary_agent = LlmAgent(
         temperature=0,
     ),
     name="summary_step",
-    description="Builds the final compact clinical summary JSON from transcript text.",
+    description="Builds a compact clinical summary JSON from transcript text.",
     instruction=f"""
 You are the clinical summarization step in a deterministic pipeline.
 
 Transcript text (from previous step):
-{{transcript_text}}
+{{transcript_text?}}
+
+Task:
+- Create a compact clinical summary from the transcript.
 
 Output rules:
 - Respond with only a JSON object.
 - Do not wrap JSON in markdown fences.
 - Do not add explanations before or after JSON.
-- All JSON field values must be written in German (Deutsch).
-- Keep clinical terminology in German when possible.
+- All JSON string values must be in German (Deutsch, de-DE).
+- If the transcript includes English fragments, translate those fragments to natural German medical language.
+- Keep clinical meaning, numbers, units, medication names, and timing unchanged.
 - Use null when information is missing.
 - Do not invent facts not supported by the transcript.
+- Language must be strictly German for every JSON string value; no English fragments are allowed.
 
 Required JSON schema:
 {SUMMARY_SCHEMA}
@@ -86,10 +151,13 @@ Required JSON schema:
 root_agent = SequentialAgent(
     name="medisprache_pipeline",
     description=(
-        "Deterministic two-step pipeline: transcribe audio first, then generate "
-        "structured clinical summary JSON."
+        "Deterministic two-step pipeline: direct transcription, then strict "
+        "German JSON summarization."
     ),
-    sub_agents=[transcription_agent, summary_agent],
+    sub_agents=[
+        transcription_agent,
+        summary_agent,
+    ],
 )
 
 app = App(
@@ -97,8 +165,5 @@ app = App(
     root_agent=root_agent,
     plugins=[
         SaveFilesAsArtifactsPlugin(),
-        OllamaToolCallBridgePlugin(
-            allowed_tool_names={"transcribe_audio", "transcribe_uploaded_artifact"}
-        ),
     ],
 )
