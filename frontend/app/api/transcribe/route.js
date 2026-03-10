@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 const APP_NAME = "medisprache";
 const DEFAULT_ADK_API_BASE = process.env.ADK_API_BASE || "http://backend:8000";
 const ALLOWED_EXTENSIONS = new Set([".mp3", ".wav"]);
-const MAX_AUDIO_BYTES = Number(process.env.MAX_AUDIO_UPLOAD_BYTES || 10 * 1024 * 1024);
+const MAX_AUDIO_BYTES = Number(process.env.MAX_AUDIO_UPLOAD_BYTES || 50 * 1024 * 1024);
 const MAX_REQUEST_BYTES = Number(
   process.env.MAX_TRANSCRIBE_REQUEST_BYTES || MAX_AUDIO_BYTES + 1024 * 1024,
 );
@@ -30,6 +30,13 @@ class InvalidBackendResponseError extends Error {
   constructor(message = "Backend returned non-JSON response.") {
     super(message);
     this.name = "InvalidBackendResponseError";
+  }
+}
+
+class BackendStreamError extends Error {
+  constructor(message = "Backend stream returned an error event.") {
+    super(message);
+    this.name = "BackendStreamError";
   }
 }
 
@@ -93,6 +100,10 @@ function getFunctionResponseName(part) {
   return part?.functionResponse?.name || part?.function_response?.name || null;
 }
 
+function getStateDelta(event) {
+  return event?.actions?.stateDelta || event?.actions?.state_delta || null;
+}
+
 function parseSseFrames(buffer) {
   const frames = [];
   let remaining = buffer;
@@ -131,11 +142,32 @@ function parseSummaryJson(text) {
     throw new MissingFinalResponseError();
   }
 
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new InvalidBackendResponseError();
+  const trimmed = text.trim();
+  const fenced = trimmed
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/, "")
+    .trim();
+
+  const candidates = [trimmed, fenced];
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
   }
+
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // Try next candidate.
+    }
+  }
+
+  throw new InvalidBackendResponseError();
 }
 
 function parseContentLength(request) {
@@ -162,6 +194,9 @@ function releaseTranscriptionSlot() {
 }
 
 function toSafeClientMessage(error) {
+  if (error instanceof BackendStreamError) {
+    return error.message;
+  }
   if (error instanceof MissingFinalResponseError) {
     return "Die Verarbeitung wurde beendet, aber es liegt kein Endergebnis vor.";
   }
@@ -277,8 +312,8 @@ export async function POST(request) {
         );
 
         const prompt =
-          "Transcribe the uploaded German medical dictation audio and return only JSON.\n" +
-          "Use the uploaded artifact tool if needed.";
+          "Transkribiere das hochgeladene deutsche medizinische Diktat und gib nur JSON zurueck.\n" +
+          "Nutze bei Bedarf das Tool fuer hochgeladene Artefakte.";
 
           const runResponse = await fetch(`${DEFAULT_ADK_API_BASE}/run_sse`, {
             method: "POST",
@@ -308,7 +343,14 @@ export async function POST(request) {
           });
 
           if (!runResponse.ok) {
-            throw new Error(`ADK run_sse failed with status ${runResponse.status}.`);
+            let detail = "";
+            try {
+              detail = (await runResponse.text()).trim();
+            } catch {
+              // Keep original status-only message.
+            }
+            const detailSuffix = detail ? `: ${detail.slice(0, 400)}` : ".";
+            throw new Error(`ADK run_sse failed with status ${runResponse.status}${detailSuffix}`);
           }
 
         if (!runResponse.body) {
@@ -338,6 +380,52 @@ export async function POST(request) {
             }
 
             const parts = event?.content?.parts;
+            const author = event?.author || "";
+            const stateDelta = getStateDelta(event);
+
+            const streamError =
+              typeof event?.error === "string"
+                ? event.error.trim()
+                : "";
+            if (streamError) {
+              throw new BackendStreamError(streamError);
+            }
+
+            if (author === "transcription_step" && !stageState.transcribeStarted) {
+              stageState.transcribeStarted = true;
+              pushStage(
+                stageState,
+                "transcribing_audio",
+                "Audio wird transkribiert.",
+              );
+            }
+
+            if (
+              !stageState.transcriptionDone &&
+              typeof stateDelta?.transcript_text === "string"
+            ) {
+              stageState.transcriptionDone = true;
+              pushStage(
+                stageState,
+                "transcription_done",
+                "Transkription abgeschlossen.",
+              );
+              pushStage(
+                stageState,
+                "summarizing",
+                "Klinische Zusammenfassung wird erstellt.",
+              );
+              stageState.summarizing = true;
+            }
+
+            if (author === "summary_step" && !stageState.summarizing) {
+              stageState.summarizing = true;
+              pushStage(
+                stageState,
+                "summarizing",
+                "Klinische Zusammenfassung wird erstellt.",
+              );
+            }
             if (Array.isArray(parts)) {
               for (const part of parts) {
                 const functionCallName = getFunctionCallName(part);
@@ -442,3 +530,5 @@ export const maxDuration = 300;
   This route intentionally returns NDJSON over chunked HTTP so the browser can
   display ADK progress stages while run_sse events arrive.
 */
+
+

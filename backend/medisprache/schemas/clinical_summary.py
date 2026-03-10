@@ -7,10 +7,28 @@ from medisprache.schemas.base import StrictBaseModel
 
 
 class CompactClinicalSummary(StrictBaseModel):
-    patient_complaint: Optional[str] = None
-    findings: Optional[str] = None
-    diagnosis: Optional[str] = None
-    next_steps: Optional[str] = None
+    patient_complaint: Optional[str] = Field(
+        default=None,
+        description=(
+            "Chief complaint for this encounter in concise clinical German; "
+            "set null only if no presenting complaint is stated."
+        ),
+    )
+    findings: Optional[str] = Field(
+        default=None,
+        description="Relevant clinical findings from history, exam, and key measurements.",
+    )
+    diagnosis: Optional[str] = Field(
+        default=None,
+        description="Most likely diagnosis supported by transcript evidence.",
+    )
+    next_steps: Optional[str] = Field(
+        default=None,
+        description=(
+            "Immediate management plan, treatment actions, and follow-up in concise "
+            "clinical German (avoid narrative transcript text)."
+        ),
+    )
 
 
 class Medication(StrictBaseModel):
@@ -112,3 +130,4 @@ class DetailedClinicalNote(StrictBaseModel):
 class StructuredClinicalOutput(StrictBaseModel):
     summary: CompactClinicalSummary
     note: DetailedClinicalNote
+

@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 import uuid
 
 
@@ -13,14 +14,23 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("audio_path", help="Path to a WAV or MP3 file on disk.")
     parser.add_argument(
-        "--ollama-model",
-        dest="ollama_model",
-        help="Ollama model name, e.g. qwen3.5",
+        "--llm-provider",
+        dest="llm_provider",
+        choices=["ollama", "gemini"],
+        help="Summary provider: ollama or gemini.",
     )
     parser.add_argument(
         "--ollama-api-base",
         dest="ollama_api_base",
         help="Ollama API base URL, e.g. http://localhost:11434",
+    )
+    parser.add_argument(
+        "--google-api-key",
+        dest="google_api_key",
+        help=(
+            "Gemini API key. Prefer setting GOOGLE_API_KEY as an environment variable "
+            "instead — CLI arguments are visible to other users via process listings (ps)."
+        ),
     )
     parser.add_argument(
         "--whisper-model",
@@ -43,7 +53,7 @@ async def run_cli(audio_path: str) -> None:
     from google.adk.sessions.in_memory_session_service import InMemorySessionService
     from google.genai import types
 
-    from medisprache import app, root_agent
+    from medisprache import app
     from medisprache.schemas.clinical_summary import CompactClinicalSummary
 
     user_id = "cli"
@@ -75,12 +85,14 @@ async def run_cli(audio_path: str) -> None:
         new_message=message,
     ):
         if (
-            event.author == root_agent.name
+            event.author != "user"
             and event.is_final_response()
             and event.content
             and event.content.parts
         ):
-            final_text = "".join(part.text or "" for part in event.content.parts).strip()
+            candidate = "".join(part.text or "" for part in event.content.parts).strip()
+            if candidate:
+                final_text = candidate
 
     if not final_text:
         raise RuntimeError("The agent did not produce a final JSON response.")
@@ -98,7 +110,7 @@ async def run_cli(audio_path: str) -> None:
 def main() -> None:
     args = parse_args()
     env_updates = {
-        "OLLAMA_MODEL": args.ollama_model,
+        "LLM_PROVIDER": args.llm_provider,
         "OLLAMA_API_BASE": args.ollama_api_base,
         "WHISPER_MODEL": args.whisper_model,
         "WHISPER_DEVICE": args.whisper_device,
@@ -106,6 +118,15 @@ def main() -> None:
     for key, value in env_updates.items():
         if value:
             os.environ[key] = value
+
+    if args.google_api_key:
+        if os.getenv("GOOGLE_API_KEY"):
+            print(
+                "Warning: GOOGLE_API_KEY is already set in the environment. "
+                "--google-api-key will override it for this run.",
+                file=sys.stderr,
+            )
+        os.environ["GOOGLE_API_KEY"] = args.google_api_key
 
     asyncio.run(run_cli(args.audio_path))
 
