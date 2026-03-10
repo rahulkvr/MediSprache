@@ -5,7 +5,7 @@
 ![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)
 ![Google ADK](https://img.shields.io/badge/Google-ADK-4285F4?logo=google)
 
-> **Demo Video**
+> **Demo**
 > ![MediSprache UI Demonstration](./assets/medisprache_demo.webp)
 
 A Docker-first demo for German medical dictation: upload audio, get a structured clinical summary as JSON.
@@ -92,6 +92,7 @@ flowchart TD
 ## Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (includes Docker Compose)
+- A [Gemini API key](https://aistudio.google.com/app/apikey) (only if using the `gemini` provider)
 
 No local Python or Node setup is required for the main workflow.
 
@@ -394,25 +395,36 @@ sed -i 's/\r$//' setup.sh
 ## Repository Layout
 
 ```text
+.gitattributes
+.gitignore
+docker-compose.yml
+setup.sh
+assets/
+  medisprache_demo.webp
 backend/
   Dockerfile
   main.py
   pyproject.toml
+  uv.lock
   medisprache/
     agent.py
+    fixtures/
+      sample_audio/          # sample MP3/WAV files for testing
+    plugins/
+      ollama_bridge.py
     prompts/
+      registry.py
+      schema_prompt.py
     schemas/
     tests/
     tools/
+      transcribe_audio.py
 frontend/
   Dockerfile
+  next.config.mjs
+  package.json
   app/
+    page.js
+    layout.js
     api/transcribe/route.js
-docker-compose.yml
-setup.sh
-.gitattributes
 ```
-
-
-
-
