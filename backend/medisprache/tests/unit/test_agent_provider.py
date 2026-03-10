@@ -31,6 +31,9 @@ def test_build_summary_model_for_ollama_uses_fixed_qwen(monkeypatch: pytest.Monk
 
     assert isinstance(model, LiteLlm)
     assert model.model == f"ollama_chat/{FIXED_OLLAMA_MODEL}"
+    assert model._additional_args["format"] == "json"
+    assert model._additional_args["timeout"] == agent.OLLAMA_TIMEOUT_SECONDS
+    assert model._additional_args["num_predict"] == agent.OLLAMA_MAX_OUTPUT_TOKENS
 
 
 def test_build_summary_model_for_gemini_uses_fixed_flash_model(
@@ -70,7 +73,7 @@ def test_build_summary_agent_for_gemini_disables_output_schema(
     )
 
 
-def test_build_summary_agent_for_ollama_keeps_output_schema(
+def test_build_summary_agent_for_ollama_uses_retry_summary_agent(
     monkeypatch: pytest.MonkeyPatch,
 ):
     agent = _load_agent_module(monkeypatch)
@@ -79,7 +82,7 @@ def test_build_summary_agent_for_ollama_keeps_output_schema(
 
     summary_agent = agent._build_summary_agent()
 
-    assert summary_agent.output_schema is agent.CompactClinicalSummary
+    assert isinstance(summary_agent, agent.DeterministicOllamaSummaryAgent)
     assert summary_agent.output_key == agent.SUMMARY_STATE_KEY
 
 
@@ -141,3 +144,23 @@ def test_allows_fixed_model_override_values(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("GEMINI_MODEL", FIXED_GEMINI_MODEL)
 
     agent._validate_fixed_model_env_overrides()
+
+def test_ollama_max_output_tokens_has_sane_floor(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("OLLAMA_MAX_OUTPUT_TOKENS", "128")
+    agent = _load_agent_module(monkeypatch)
+
+    assert agent.OLLAMA_MAX_OUTPUT_TOKENS == 512
+
+
+def test_ollama_max_output_tokens_invalid_env_uses_default(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("OLLAMA_MAX_OUTPUT_TOKENS", "invalid")
+    agent = _load_agent_module(monkeypatch)
+
+    assert agent.OLLAMA_MAX_OUTPUT_TOKENS == 640
+
+
+def test_ollama_timeout_seconds_invalid_env_uses_default(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("OLLAMA_TIMEOUT_SECONDS", "invalid")
+    agent = _load_agent_module(monkeypatch)
+
+    assert agent.OLLAMA_TIMEOUT_SECONDS == 300
