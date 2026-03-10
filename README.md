@@ -329,7 +329,7 @@ Fix:
 3. If it still fails, run once with a clean temporary Docker config:
 
 ```bash
-wsl bash -lc 'cd /mnt/d/Rahul/Interview/MediSprache && export DOCKER_CONFIG=$(mktemp -d) && printf "{}\n" > "$DOCKER_CONFIG/config.json" && bash ./setup.sh'
+wsl bash -lc 'cd /path/to/MediSprache && export DOCKER_CONFIG=$(mktemp -d) && printf "{}\n" > "$DOCKER_CONFIG/config.json" && bash ./setup.sh'
 ```
 
 ### Gemini 400 (`additional_properties`) during summary
