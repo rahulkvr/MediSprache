@@ -8,6 +8,8 @@
 > **Demo**
 > ![MediSprache UI Demonstration](./assets/medisprache_demo.webp)
 
+**Live demo:** [medisprache-1.onrender.com](https://medisprache-1.onrender.com) — hosted on Render's free tier, so cold starts may be slow and only short audio clips are supported. Sample audio files for testing are available in [`backend/medisprache/fixtures/sample_audio/`](backend/medisprache/fixtures/sample_audio/).
+
 A Docker-first demo for German medical dictation: upload audio, get a structured clinical summary as JSON.
 
 Built with a Python backend (Google ADK agent), local speech-to-text (faster-whisper), and a selectable summary provider:
@@ -99,6 +101,8 @@ No local Python or Node setup is required for the main workflow.
 ## Quick Start
 
 ### First-time setup (recommended)
+
+> **Tip:** Choosing `gemini` as the provider is recommended — it skips the Ollama model download during setup and produces faster, higher-quality summaries.
 
 **For macOS and Linux:**
 ```bash
@@ -347,18 +351,6 @@ Fix:
 wsl bash -lc 'cd /path/to/MediSprache && export DOCKER_CONFIG=$(mktemp -d) && printf "{}\n" > "$DOCKER_CONFIG/config.json" && bash ./setup.sh'
 ```
 
-### Gemini 400 (`additional_properties`) during summary
-
-Symptom in backend logs:
-
-```text
-Invalid JSON payload received. Unknown name "additional_properties"
-```
-
-Fix in this version:
-- Gemini runs without ADK `output_schema` strict mode to avoid this SDK/API incompatibility.
-- Frontend now surfaces backend SSE error text directly instead of only "missing final JSON".
-
 ### Frontend cannot reach backend
 
 ```bash
@@ -368,29 +360,6 @@ docker compose logs frontend
 ```
 
 Frontend container should use `http://backend:8000`, not `localhost`.
-
-### Verify backend
-
-```bash
-curl http://localhost:8000/list-apps
-```
-
-Expected:
-
-```json
-["medisprache"]
-```
-
-### `setup.sh` line-ending issue (`\r: command not found`)
-
-```bash
-# PowerShell + WSL (recommended)
-wsl sed -i 's/\r$//' ./setup.sh
-
-# Linux / macOS
-sed -i 's/\r$//' setup.sh
-# or: dos2unix setup.sh
-```
 
 ## Repository Layout
 
