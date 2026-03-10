@@ -31,6 +31,8 @@ SUPPORTED_LLM_PROVIDERS = {"ollama", "gemini"}
 FIXED_OLLAMA_MODEL = "qwen2.5:1.5b"
 FIXED_GEMINI_MODEL = "gemini-3-flash-preview"
 DEFAULT_OLLAMA_API_BASE = "http://localhost:11434"
+TRANSCRIPT_DATA_START_MARKER = "### TRANSCRIPT_DATA_START ###"
+TRANSCRIPT_DATA_END_MARKER = "### TRANSCRIPT_DATA_END ###"
 
 
 def _int_env(name: str, default: int, *, min_value: int | None = None) -> int:
@@ -144,11 +146,19 @@ def _extract_litellm_text(response: Any) -> str:
     raise ValueError("LiteLLM returned non-text content for summary generation.")
 
 
+def _sanitize_transcript_for_prompt(transcript_text: str) -> str:
+    return (
+        transcript_text.replace(TRANSCRIPT_DATA_START_MARKER, "[TRANSCRIPT_DATA_START]")
+        .replace(TRANSCRIPT_DATA_END_MARKER, "[TRANSCRIPT_DATA_END]")
+    )
+
+
 def _build_ollama_summary_prompt(transcript_text: str, *, retry: bool) -> str:
+    sanitized_transcript = _sanitize_transcript_for_prompt(transcript_text)
     transcript_block = (
-        "### TRANSCRIPT_DATA_START ###\n"
-        f"{transcript_text}\n"
-        "### TRANSCRIPT_DATA_END ###"
+        f"{TRANSCRIPT_DATA_START_MARKER}\n"
+        f"{sanitized_transcript}\n"
+        f"{TRANSCRIPT_DATA_END_MARKER}"
     )
     prompt = SUMMARY_INSTRUCTION.replace(
         "{" + TRANSCRIPT_STATE_KEY + "?}",
