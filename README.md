@@ -5,6 +5,9 @@
 ![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)
 ![Google ADK](https://img.shields.io/badge/Google-ADK-4285F4?logo=google)
 
+> **Demo Video**
+> ![MediSprache UI Demonstration](./assets/medisprache_demo.webp)
+
 A Docker-first demo for German medical dictation: upload audio, get a structured clinical summary as JSON.
 
 Built with a Python backend (Google ADK agent), local speech-to-text (faster-whisper), and a selectable summary provider:
@@ -29,16 +32,16 @@ Built with a Python backend (Google ADK agent), local speech-to-text (faster-whi
 
 ## Features
 
-- Local-first speech-to-text using faster-whisper
-- LLM provider choice at setup time: `ollama` or `gemini`
-- Fixed model mapping for deterministic behavior:
+- **Local-first speech-to-text** using `faster-whisper`
+- **LLM provider choice** at setup time: `ollama` or `gemini`
+- **Fixed model mapping** for deterministic behavior:
   - `ollama` -> `qwen2.5:1.5b`
   - `gemini` -> `gemini-3-flash-preview`
-- Gemini summary calls use thinking level `high`
-- Gemini mode uses `response_mime_type=application/json` + `response_json_schema` for structured output
-- Deterministic ADK pipeline: direct transcription step + structured summary step
-- Schema-driven prompt management for summary generation
-- Interactive Next.js frontend for upload, progress, and results
+- **Gemini summary calls** use thinking level `high`
+- **Gemini mode** uses `response_mime_type=application/json` + `response_json_schema` for structured output
+- **Deterministic ADK pipeline**: direct transcription step + structured summary step
+- **Schema-driven prompt management** for summary generation
+- **Interactive Next.js frontend** for upload, progress, and results
 
 ## Tech Stack
 
@@ -54,29 +57,33 @@ Built with a Python backend (Google ADK agent), local speech-to-text (faster-whi
 
 ## Architecture
 
+> **Design Choice**: This application uses a deterministic two-step pipeline (Transcription → Summarization). This explicit separation maximizes accuracy for German medical terminology during speech-to-text and guarantees strict JSON schema enforcement during the summarization phase, ensuring reliable and structured output compared to single-pass multi-modal LLM calls.
+
 ```mermaid
 flowchart TD
     user["Browser User"]
     frontend["frontend container\nNext.js"]
-    backend["backend container\nGoogle ADK api_server"]
+    backend["backend container\nGoogle ADK api_server\nmedisprache_pipeline (SequentialAgent)"]
+    transcription_step["transcription_step\n(faster-whisper)"]
+    summary_step["summary_step\n(LlmAgent / Custom Agent)"]
     ollama["ollama container\n(optional, ollama profile)"]
-    whisper["local Whisper model\ninside backend"]
     gemini["Gemini API"]
 
     user --> frontend
     frontend -->|"POST /apps/.../sessions + POST /run_sse"| backend
-    backend --> whisper
-    backend -->|"if LLM_PROVIDER=ollama"| ollama
-    backend -->|"if LLM_PROVIDER=gemini"| gemini
+    backend --> transcription_step
+    backend --> summary_step
+    summary_step -->|"if LLM_PROVIDER=ollama"| ollama
+    summary_step -->|"if LLM_PROVIDER=gemini"| gemini
 ```
 
 ## What It Does
 
 1. Upload an MP3 or WAV file with German medical dictation.
 2. Frontend creates an ADK session and sends audio to backend via `/run_sse`.
-3. Deterministic transcription step runs faster-whisper on the uploaded artifact.
-4. Summary step sends transcript text to the selected provider and returns `CompactClinicalSummary` JSON.
-5. Frontend streams progress and shows final JSON fields:
+3. **`transcription_step`**: Deterministically runs faster-whisper on the uploaded artifact without LLM routing.
+4. **`summary_step`**: Builds a structured summary from transcript text, sending it to the selected provider (`ollama` or `gemini`) to return a `CompactClinicalSummary`.
+5. Frontend streams progress events (`stage`, `partial`, `result`) and shows final JSON fields:
    - `patient_complaint`
    - `findings`
    - `diagnosis`
@@ -92,9 +99,18 @@ No local Python or Node setup is required for the main workflow.
 
 ### First-time setup (recommended)
 
+**For macOS and Linux:**
 ```bash
 bash setup.sh
 ```
+
+**For Windows:**
+We recommend using **WSL (Windows Subsystem for Linux)** or **Git Bash**. Do not use plain `cmd.exe` or PowerShell directly for the shell script.
+```bash
+# In your WSL terminal or Git Bash
+bash setup.sh
+```
+*(If you encounter line-ending issues like `\r: command not found` on Windows, run `wsl sed -i 's/\r$//' ./setup.sh` first).*
 
 `setup.sh` will:
 - prompt for provider (`ollama` or `gemini`)
@@ -103,9 +119,7 @@ bash setup.sh
 - pre-pull Ollama model only for `ollama` mode
 - auto-handle common WSL Docker credential-helper issues for this setup run
 
-On Windows, run from Git Bash or WSL (not plain `cmd.exe`).
-
-### Non-interactive setup
+### Non-interactive setup (All OS)
 
 ```bash
 LLM_PROVIDER=ollama bash setup.sh
