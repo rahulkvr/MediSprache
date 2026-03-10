@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 from typing import AsyncGenerator
 
 from google.adk.agents import LlmAgent, SequentialAgent
@@ -159,23 +160,28 @@ def _extract_audio_path_from_user_content(user_content: object | None) -> str | 
     if not combined_text:
         return None
 
+    extracted: str | None = None
+
     quoted_match = re.search(
         r"""[\"']([^\"']+\.(?:mp3|wav|m4a|ogg|flac))[\"']""",
         combined_text,
         flags=re.IGNORECASE,
     )
     if quoted_match:
-        return quoted_match.group(1)
+        extracted = quoted_match.group(1)
+    else:
+        bare_match = re.search(
+            r"""([A-Za-z]:[^\s\"']+\.(?:mp3|wav|m4a|ogg|flac)|/[^\s\"']+\.(?:mp3|wav|m4a|ogg|flac))""",
+            combined_text,
+            flags=re.IGNORECASE,
+        )
+        if bare_match:
+            extracted = bare_match.group(1).rstrip(".,)")
 
-    bare_match = re.search(
-        r"""([A-Za-z]:[^\s\"']+\.(?:mp3|wav|m4a|ogg|flac)|/[^\s\"']+\.(?:mp3|wav|m4a|ogg|flac))""",
-        combined_text,
-        flags=re.IGNORECASE,
-    )
-    if bare_match:
-        return bare_match.group(1).rstrip(".,)")
+    if not extracted:
+        return None
 
-    return None
+    return str(Path(extracted).resolve())
 
 
 class DeterministicTranscriptionAgent(BaseAgent):

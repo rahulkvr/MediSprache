@@ -27,7 +27,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--google-api-key",
         dest="google_api_key",
-        help="Gemini API key (alternative to GOOGLE_API_KEY env var).",
+        help=(
+            "Gemini API key. Prefer setting GOOGLE_API_KEY as an environment variable "
+            "instead — CLI arguments are visible to other users via process listings (ps)."
+        ),
     )
     parser.add_argument(
         "--whisper-model",
