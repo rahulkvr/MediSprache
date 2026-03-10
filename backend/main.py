@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 import uuid
 
 
@@ -108,13 +109,21 @@ def main() -> None:
     env_updates = {
         "LLM_PROVIDER": args.llm_provider,
         "OLLAMA_API_BASE": args.ollama_api_base,
-        "GOOGLE_API_KEY": args.google_api_key,
         "WHISPER_MODEL": args.whisper_model,
         "WHISPER_DEVICE": args.whisper_device,
     }
     for key, value in env_updates.items():
         if value:
             os.environ[key] = value
+
+    if args.google_api_key:
+        if os.getenv("GOOGLE_API_KEY"):
+            print(
+                "Warning: GOOGLE_API_KEY is already set in the environment. "
+                "--google-api-key will override it for this run.",
+                file=sys.stderr,
+            )
+        os.environ["GOOGLE_API_KEY"] = args.google_api_key
 
     asyncio.run(run_cli(args.audio_path))
 
