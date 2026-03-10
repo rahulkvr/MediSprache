@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 import re
 from pathlib import Path
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from google.adk.agents import LlmAgent, SequentialAgent
 from google.adk.agents.base_agent import BaseAgent
@@ -17,6 +19,8 @@ from google.adk.models.google_llm import Gemini
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.plugins.save_files_as_artifacts_plugin import SaveFilesAsArtifactsPlugin
 from google.genai import types
+from litellm import completion
+from pydantic import ValidationError
 
 from medisprache.prompts import build_schema_instruction, get_prompt_profile
 from medisprache.prompts.registry import COMPACT_CLINICAL_SUMMARY_PROMPT_ID
@@ -28,6 +32,27 @@ SUPPORTED_LLM_PROVIDERS = {"ollama", "gemini"}
 FIXED_OLLAMA_MODEL = "qwen2.5:1.5b"
 FIXED_GEMINI_MODEL = "gemini-3-flash-preview"
 DEFAULT_OLLAMA_API_BASE = "http://localhost:11434"
+
+
+def _int_env(name: str, default: int, *, min_value: int | None = None) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    stripped = raw.strip()
+    if not stripped:
+        return default
+    try:
+        value = int(stripped)
+    except ValueError:
+        return default
+    if min_value is not None and value < min_value:
+        return min_value
+    return value
+
+
+OLLAMA_TIMEOUT_SECONDS = _int_env("OLLAMA_TIMEOUT_SECONDS", 300, min_value=60)
+# Guard against truncated JSON for longer clinical outputs.
+OLLAMA_MAX_OUTPUT_TOKENS = _int_env("OLLAMA_MAX_OUTPUT_TOKENS", 640, min_value=512)
 GEMINI_THINKING_LEVEL = "high"
 TRANSCRIPT_STATE_KEY = "transcript_text"
 SUMMARY_STATE_KEY = "clinical_summary"
@@ -79,6 +104,106 @@ def _validate_fixed_model_env_overrides() -> None:
             )
 
 
+def _extract_json_candidate(text: str) -> str:
+    candidate = text.strip()
+
+    if candidate.startswith("```"):
+        candidate = candidate.strip("`")
+        if candidate.lower().startswith("json"):
+            candidate = candidate[4:]
+        candidate = candidate.strip()
+
+    start = candidate.find("{")
+    end = candidate.rfind("}")
+    if start >= 0 and end > start:
+        return candidate[start : end + 1]
+    return candidate
+
+
+def _is_truncated_json_error(exc: ValidationError) -> bool:
+    for error in exc.errors():
+        if error.get("type") != "json_invalid":
+            continue
+        message = str(error.get("msg", ""))
+        if "EOF while parsing" in message:
+            return True
+    return False
+
+
+def _extract_litellm_text(response: Any) -> str:
+    try:
+        content = response.choices[0].message.content
+    except Exception as exc:  # pragma: no cover - defensive extraction
+        raise ValueError("LiteLLM response did not contain message content.") from exc
+
+    if isinstance(content, str):
+        text = content.strip()
+        if not text:
+            raise ValueError("LiteLLM returned empty content.")
+        return text
+
+    raise ValueError("LiteLLM returned non-text content for summary generation.")
+
+
+def _build_ollama_summary_prompt(transcript_text: str, *, retry: bool) -> str:
+    prompt = SUMMARY_INSTRUCTION.replace("{" + TRANSCRIPT_STATE_KEY + "?}", transcript_text)
+    if not retry:
+        return prompt
+
+    return (
+        prompt
+        + "\n\nWICHTIG: Die vorige Ausgabe war unvollstaendig. "
+        "Erzeuge das vollstaendige JSON-Objekt erneut von Anfang an. "
+        "Bleibe kurz und praezise je Feld."
+    )
+
+
+def _summarize_with_ollama_with_retries(transcript_text: str) -> CompactClinicalSummary:
+    ollama_api_base = _get_env("OLLAMA_API_BASE") or DEFAULT_OLLAMA_API_BASE
+
+    retry_token_caps = (
+        OLLAMA_MAX_OUTPUT_TOKENS,
+        max(1024, OLLAMA_MAX_OUTPUT_TOKENS * 2),
+        max(1536, OLLAMA_MAX_OUTPUT_TOKENS * 3),
+    )
+
+    last_error: ValidationError | None = None
+
+    for idx, token_cap in enumerate(retry_token_caps):
+        response = completion(
+            model=f"ollama_chat/{FIXED_OLLAMA_MODEL}",
+            api_base=ollama_api_base,
+            messages=[
+                {
+                    "role": "user",
+                    "content": _build_ollama_summary_prompt(
+                        transcript_text,
+                        retry=idx > 0,
+                    ),
+                }
+            ],
+            temperature=0,
+            format="json",
+            timeout=OLLAMA_TIMEOUT_SECONDS + (idx * 120),
+            num_predict=token_cap,
+        )
+
+        candidate_json = _extract_json_candidate(_extract_litellm_text(response))
+
+        try:
+            return CompactClinicalSummary.model_validate_json(candidate_json)
+        except ValidationError as exc:
+            last_error = exc
+            if _is_truncated_json_error(exc):
+                continue
+            raise
+
+    raise ValueError(
+        "Ollama produced truncated JSON across retry attempts. "
+        "Please retry once; if this persists, share backend logs."
+    ) from last_error
+
+
 def _build_summary_model(provider: str) -> BaseLlm:
     _validate_fixed_model_env_overrides()
 
@@ -87,6 +212,10 @@ def _build_summary_model(provider: str) -> BaseLlm:
         return LiteLlm(
             model=f"ollama_chat/{FIXED_OLLAMA_MODEL}",
             api_base=ollama_api_base,
+            timeout=OLLAMA_TIMEOUT_SECONDS,
+            format="json",
+            # Provider-specific kwarg for Ollama: caps generation length.
+            num_predict=OLLAMA_MAX_OUTPUT_TOKENS,
         )
 
     if provider == "gemini":
@@ -103,7 +232,10 @@ def _build_summary_model(provider: str) -> BaseLlm:
 
 def _build_generate_content_config(provider: str) -> types.GenerateContentConfig:
     if provider == "ollama":
-        return types.GenerateContentConfig(temperature=0)
+        return types.GenerateContentConfig(
+            temperature=0,
+            max_output_tokens=OLLAMA_MAX_OUTPUT_TOKENS,
+        )
 
     if provider == "gemini":
         # Use JSON mode + JSON schema for Gemini to improve structure fidelity
@@ -120,9 +252,16 @@ def _build_generate_content_config(provider: str) -> types.GenerateContentConfig
     raise ValueError(f"Unsupported provider '{provider}'. Allowed values: {allowed}.")
 
 
-def _build_summary_agent() -> LlmAgent:
+def _build_summary_agent() -> BaseAgent:
     provider = _resolve_llm_provider()
-    common_kwargs = dict(
+
+    if provider == "ollama":
+        return DeterministicOllamaSummaryAgent(
+            name="summary_step",
+            description="Builds a compact clinical summary JSON from transcript text.",
+        )
+
+    return LlmAgent(
         model=_build_summary_model(provider),
         name="summary_step",
         description="Builds a compact clinical summary JSON from transcript text.",
@@ -130,17 +269,40 @@ def _build_summary_agent() -> LlmAgent:
         generate_content_config=_build_generate_content_config(provider),
     )
 
-    # Gemini API currently rejects ADK's response_schema payload shape for this
-    # strict schema mode. Keep strict schema mode for Ollama and use Gemini
-    # response_json_schema in generate_content_config instead.
-    if provider == "ollama":
-        return LlmAgent(
-            **common_kwargs,
-            output_schema=CompactClinicalSummary,
-            output_key=SUMMARY_STATE_KEY,
-        )
 
-    return LlmAgent(**common_kwargs)
+class DeterministicOllamaSummaryAgent(BaseAgent):
+    """Runs Ollama summarization with JSON-parse retries for truncation safety."""
+
+    output_key: str = SUMMARY_STATE_KEY
+
+    async def _run_async_impl(
+        self, ctx: InvocationContext
+    ) -> AsyncGenerator[Event, None]:
+        transcript_text = str(ctx.session.state.get(TRANSCRIPT_STATE_KEY, "")).strip()
+        if not transcript_text:
+            raise ValueError("Transcript state is empty; cannot build clinical summary.")
+
+        summary = await asyncio.to_thread(
+            _summarize_with_ollama_with_retries,
+            transcript_text,
+        )
+        summary_payload = summary.model_dump(mode="json")
+        summary_text = json.dumps(summary_payload, ensure_ascii=False)
+
+        yield Event(
+            invocation_id=ctx.invocation_id,
+            author=self.name,
+            branch=ctx.branch,
+            content=types.Content(
+                role="model",
+                parts=[types.Part(text=summary_text)],
+            ),
+            actions=EventActions(
+                state_delta={
+                    self.output_key: summary_payload,
+                }
+            ),
+        )
 
 
 def _extract_audio_path_from_user_content(user_content: object | None) -> str | None:

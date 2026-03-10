@@ -137,6 +137,37 @@ prepare_wsl_docker_config() {
   echo "         Using temporary DOCKER_CONFIG=$DOCKER_CONFIG for this setup run."
 }
 
+cleanup_stale_ollama_containers() {
+  # `docker compose down` without `--profile ollama` leaves profiled containers.
+  # If the project network is removed, those containers can retain a stale
+  # network reference and fail to start with "network ... not found".
+  docker compose --profile ollama rm -fsv ollama ollama-init >/dev/null 2>&1 || true
+}
+
+start_ollama_service_with_retry() {
+  local attempt=1
+  local max_attempts=2
+
+  while (( attempt <= max_attempts )); do
+    if docker compose --profile ollama up -d ollama; then
+      return 0
+    fi
+
+    if (( attempt == max_attempts )); then
+      break
+    fi
+
+    echo "  [WARN] Ollama start failed (attempt $attempt/$max_attempts). Retrying with clean compose state..."
+    docker compose --profile ollama down --remove-orphans >/dev/null 2>&1 || true
+    cleanup_stale_ollama_containers
+    sleep 2
+    attempt=$((attempt + 1))
+  done
+
+  echo "  [FAIL] Could not start ollama service after retries."
+  return 1
+}
+
 echo "==============================================="
 echo "  MediSprache -- First-Run Setup"
 echo "==============================================="
@@ -243,7 +274,8 @@ wait "$PID_BUILD" && echo "  [OK] Builds complete" || {
 echo ""
 if [[ "$provider" == "ollama" ]]; then
   echo "[2/3] Pre-downloading Ollama model ($FIXED_OLLAMA_MODEL)..."
-  docker compose --profile ollama up -d ollama
+  cleanup_stale_ollama_containers
+  start_ollama_service_with_retry
 
   echo "  Waiting for Ollama server..."
   until docker compose --profile ollama exec ollama ollama list > /dev/null 2>&1; do
