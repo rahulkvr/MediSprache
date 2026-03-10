@@ -5,9 +5,11 @@
 ![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)
 ![Google ADK](https://img.shields.io/badge/Google-ADK-4285F4?logo=google)
 
-A Docker-first demo for German medical dictation: upload audio, get a structured clinical summary as JSON - fully local, no cloud API keys required.
+A Docker-first demo for German medical dictation: upload audio, get a structured clinical summary as JSON.
 
-Built with a Python backend (Google ADK agent), local speech-to-text (faster-whisper), Ollama for LLM summarization, and a Next.js frontend.
+Built with a Python backend (Google ADK agent), local speech-to-text (faster-whisper), and a selectable summary provider:
+- Ollama (fixed model: `qwen2.5:1.5b`)
+- Gemini (fixed model: `gemini-3-flash-preview`)
 
 ## Table of Contents
 
@@ -27,12 +29,15 @@ Built with a Python backend (Google ADK agent), local speech-to-text (faster-whi
 
 ## Features
 
-- Local-first: runs entirely on your machine
-- German medical speech-to-text using faster-whisper
-- LLM-powered clinical summarization with structured JSON output via Ollama
+- Local-first speech-to-text using faster-whisper
+- LLM provider choice at setup time: `ollama` or `gemini`
+- Fixed model mapping for deterministic behavior:
+  - `ollama` -> `qwen2.5:1.5b`
+  - `gemini` -> `gemini-3-flash-preview`
+- Gemini summary calls use thinking level `high`
+- Gemini mode uses `response_mime_type=application/json` + `response_json_schema` for structured output
 - Deterministic ADK pipeline: direct transcription step + structured summary step
 - Schema-driven prompt management for summary generation
-- One-command Docker Compose setup
 - Interactive Next.js frontend for upload, progress, and results
 
 ## Tech Stack
@@ -41,7 +46,8 @@ Built with a Python backend (Google ADK agent), local speech-to-text (faster-whi
 |---|---|
 | Agent Framework | [Google ADK](https://github.com/google/adk-python) |
 | Speech-to-Text | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) |
-| LLM | [Ollama](https://ollama.com/) (`qwen2.5:1.5b` default) |
+| LLM (Ollama mode) | [Ollama](https://ollama.com/) (`qwen2.5:1.5b`) |
+| LLM (Gemini mode) | Gemini API (`gemini-3-flash-preview`) |
 | Backend | Python 3.13, [uv](https://docs.astral.sh/uv/) |
 | Frontend | Next.js 15, React 19 |
 | Infrastructure | Docker Compose |
@@ -53,13 +59,15 @@ flowchart TD
     user["Browser User"]
     frontend["frontend container\nNext.js"]
     backend["backend container\nGoogle ADK api_server"]
-    ollama["ollama container"]
+    ollama["ollama container\n(optional, ollama profile)"]
     whisper["local Whisper model\ninside backend"]
+    gemini["Gemini API"]
 
     user --> frontend
     frontend -->|"POST /apps/.../sessions + POST /run_sse"| backend
-    backend -->|"LiteLlm via ollama_chat"| ollama
     backend --> whisper
+    backend -->|"if LLM_PROVIDER=ollama"| ollama
+    backend -->|"if LLM_PROVIDER=gemini"| gemini
 ```
 
 ## What It Does
@@ -67,7 +75,7 @@ flowchart TD
 1. Upload an MP3 or WAV file with German medical dictation.
 2. Frontend creates an ADK session and sends audio to backend via `/run_sse`.
 3. Deterministic transcription step runs faster-whisper on the uploaded artifact.
-4. Summary step sends transcript text to Ollama and returns `CompactClinicalSummary` JSON.
+4. Summary step sends transcript text to the selected provider and returns `CompactClinicalSummary` JSON.
 5. Frontend streams progress and shows final JSON fields:
    - `patient_complaint`
    - `findings`
@@ -88,16 +96,34 @@ No local Python or Node setup is required for the main workflow.
 bash setup.sh
 ```
 
-This script parallelizes pulls/builds and model download for a faster first run.
-On Windows, run it from Git Bash or WSL (not from plain `cmd.exe`).
+`setup.sh` will:
+- prompt for provider (`ollama` or `gemini`)
+- prompt for Gemini API key only when `gemini` is selected
+- persist required vars in repository `.env` and `backend/medisprache/.env`
+- pre-pull Ollama model only for `ollama` mode
+- auto-handle common WSL Docker credential-helper issues for this setup run
+
+On Windows, run from Git Bash or WSL (not plain `cmd.exe`).
+
+### Non-interactive setup
+
+```bash
+LLM_PROVIDER=ollama bash setup.sh
+# or
+LLM_PROVIDER=gemini GOOGLE_API_KEY=your_key bash setup.sh
+```
 
 ### Standard start
 
 ```bash
+# Gemini mode (no ollama services)
 docker compose up --build
+
+# Ollama mode (includes ollama services)
+docker compose --profile ollama up --build
 ```
 
-If you see an error mentioning `dockerDesktopLinuxEngine` or `The system cannot find the file specified`, Docker Desktop is not running yet. Start Docker Desktop first, wait for the engine to be ready, then try again.
+If you see an error mentioning `dockerDesktopLinuxEngine` or `The system cannot find the file specified`, Docker Desktop is not running yet. Start Docker Desktop first, wait for engine readiness, then retry.
 
 ### Services
 
@@ -106,13 +132,14 @@ If you see an error mentioning `dockerDesktopLinuxEngine` or `The system cannot 
 | Frontend | [http://localhost:3000](http://localhost:3000) |
 | ADK Backend | [http://localhost:8000](http://localhost:8000) |
 | ADK Swagger Docs | [http://localhost:8000/docs](http://localhost:8000/docs) |
-| Ollama | `http://localhost:11434` |
+| Ollama | `http://localhost:11434` (only with `--profile ollama`) |
 
 ### Notes
 
-- `ollama-init` pulls the configured Ollama model on first startup.
+- Ollama model is fixed to `qwen2.5:1.5b`.
+- Gemini model is fixed to `gemini-3-flash-preview`.
+- `OLLAMA_MODEL` and `GEMINI_MODEL` are not configurable in this version.
 - First transcription can be slow because Whisper artifacts must be downloaded/cached.
-- Default LLM is `qwen2.5:1.5b`.
 
 ## Docker Services
 
@@ -133,16 +160,20 @@ If you see an error mentioning `dockerDesktopLinuxEngine` or `The system cannot 
 uv run adk api_server --host 0.0.0.0 --port 8000
 ```
 
-### `ollama`
+### `ollama` (profile: `ollama`)
 
 - Uses official `ollama/ollama` image
+- Only started when using `docker compose --profile ollama ...`
 - Stores model data in a Docker volume
 
 ## Configuration
 
 | Variable | Default | Used By | Description |
 |---|---|---|---|
-| `OLLAMA_MODEL` | `qwen2.5:1.5b` | backend, ollama-init | Ollama model name |
+| `LLM_PROVIDER` | none (required) | backend | LLM provider: `ollama` or `gemini` |
+| `GOOGLE_API_KEY` | none | backend | Gemini API key (required for `gemini`) |
+| `GEMINI_API_KEY` | none | backend | Fallback Gemini API key |
+| `GOOGLE_GENAI_USE_VERTEXAI` | `false` | backend | Forces Gemini API-key mode (not Vertex AI) |
 | `OLLAMA_API_BASE` | `http://ollama:11434` | backend | Ollama API base inside Docker network |
 | `WHISPER_MODEL` | `base` | backend | faster-whisper model size |
 | `WHISPER_DEVICE` | `cpu` | backend | Whisper device (`cpu` or `cuda`) |
@@ -153,13 +184,25 @@ uv run adk api_server --host 0.0.0.0 --port 8000
 | `MAX_TRANSCRIBE_REQUEST_BYTES` | `MAX_AUDIO_UPLOAD_BYTES + 1MB` | frontend | Max request payload size |
 | `MAX_CONCURRENT_TRANSCRIPTIONS` | `2` | frontend | Per-frontend process concurrency limit |
 
-Environment variables are read on process/container start. After changing limits in `.env` or Compose config, recreate the affected container(s):
+### Fixed model contract
+
+- `LLM_PROVIDER=ollama` always uses `qwen2.5:1.5b`.
+- `LLM_PROVIDER=gemini` always uses `gemini-3-flash-preview`.
+- Setting `OLLAMA_MODEL` or `GEMINI_MODEL` to other values causes backend startup validation errors.
+
+Environment variables are read on process/container start. After changing `.env` or compose config, recreate affected containers:
 
 ```bash
 docker compose up -d --force-recreate frontend
 # if backend env vars changed:
 docker compose up -d --force-recreate backend
 ```
+
+### Why two `.env` files?
+
+- Root `.env` is used by Docker Compose when starting containers.
+- `backend/medisprache/.env` is used by ADK tooling (`adk run`, `adk web`) when running from `backend`.
+- `setup.sh` syncs provider-related keys to both locations so Docker and local ADK runs stay aligned.
 
 ## Local Development
 
@@ -170,6 +213,14 @@ Docker is the primary workflow, but backend/frontend can also run locally.
 ```bash
 cd backend
 uv sync
+
+# choose provider via env
+export LLM_PROVIDER=ollama
+# or: export LLM_PROVIDER=gemini
+
+# if gemini:
+export GOOGLE_API_KEY=your_key
+
 uv run python main.py ./medisprache/fixtures/sample_audio/sample_01_bronchitis.mp3
 ```
 
@@ -182,17 +233,14 @@ uv run adk api_server --host 0.0.0.0 --port 8000
 
 ### Testing with `adk run`
 
+ADK auto-loads `.env` from the agent folder search path. For this project, place agent-level env at:
+
+- `backend/medisprache/.env`
+
+Run from the parent folder (`backend`) so ADK resolves `medisprache` correctly:
+
 ```bash
 cd backend
-
-# Windows (PowerShell)
-$env:OLLAMA_API_BASE = "http://localhost:11434"
-$env:OLLAMA_MODEL = "qwen2.5:1.5b"
-
-# Linux / macOS
-export OLLAMA_API_BASE=http://localhost:11434
-export OLLAMA_MODEL=qwen2.5:1.5b
-
 uv run adk run medisprache
 ```
 
@@ -232,14 +280,13 @@ Backend app name is `medisprache`.
 
 ## Important Files
 
-- [`backend/medisprache/agent.py`](backend/medisprache/agent.py): root ADK app and pipeline wiring
+- [`backend/medisprache/agent.py`](backend/medisprache/agent.py): provider resolution, fixed model mapping, ADK app wiring
+- [`backend/medisprache/tests/unit/test_agent_provider.py`](backend/medisprache/tests/unit/test_agent_provider.py): provider mapping and validation tests
 - [`backend/medisprache/prompts/registry.py`](backend/medisprache/prompts/registry.py): prompt profiles (`SUMMARY_PROMPT_ID`)
-- [`backend/medisprache/prompts/schema_prompt.py`](backend/medisprache/prompts/schema_prompt.py): schema-driven instruction builder
-- [`backend/medisprache/schemas/clinical_summary.py`](backend/medisprache/schemas/clinical_summary.py): output schema definitions
 - [`backend/medisprache/tools/transcribe_audio.py`](backend/medisprache/tools/transcribe_audio.py): Whisper transcription tools
 - [`frontend/app/api/transcribe/route.js`](frontend/app/api/transcribe/route.js): upload + SSE bridging route
-- [`docker-compose.yml`](docker-compose.yml): frontend/backend/ollama services
-- [`setup.sh`](setup.sh): first-run helper script
+- [`docker-compose.yml`](docker-compose.yml): frontend/backend services + optional ollama profile
+- [`setup.sh`](setup.sh): first-run helper script with provider selection
 
 ## Troubleshooting
 
@@ -255,7 +302,47 @@ Fix:
 
 1. Start Docker Desktop.
 2. Wait until the engine is ready.
-3. Run `docker compose up --build` again.
+3. Run Docker Compose again.
+
+### Backend fails on startup with provider error
+
+Common causes:
+
+- `LLM_PROVIDER` missing or invalid
+- `LLM_PROVIDER=gemini` but no `GOOGLE_API_KEY`/`GEMINI_API_KEY`
+- `OLLAMA_MODEL` or `GEMINI_MODEL` set to non-fixed values
+
+Fix by removing conflicting model env vars and setting required provider vars.
+
+### WSL Docker credential helper error (`docker-credential-desktop.exe: exec format error`)
+
+Symptom in `setup.sh` output:
+
+```text
+error getting credentials - err: fork/exec /usr/bin/docker-credential-desktop.exe: exec format error
+```
+
+Fix:
+
+1. Run setup from WSL (`wsl bash ./setup.sh`) and keep Docker Desktop running.
+2. `setup.sh` auto-detects this case and uses a temporary `DOCKER_CONFIG` for the setup process.
+3. If it still fails, run once with a clean temporary Docker config:
+
+```bash
+wsl bash -lc 'cd /mnt/d/Rahul/Interview/MediSprache && export DOCKER_CONFIG=$(mktemp -d) && printf "{}\n" > "$DOCKER_CONFIG/config.json" && bash ./setup.sh'
+```
+
+### Gemini 400 (`additional_properties`) during summary
+
+Symptom in backend logs:
+
+```text
+Invalid JSON payload received. Unknown name "additional_properties"
+```
+
+Fix in this version:
+- Gemini runs without ADK `output_schema` strict mode to avoid this SDK/API incompatibility.
+- Frontend now surfaces backend SSE error text directly instead of only "missing final JSON".
 
 ### Frontend cannot reach backend
 
@@ -282,8 +369,8 @@ Expected:
 ### `setup.sh` line-ending issue (`\r: command not found`)
 
 ```bash
-# PowerShell
-(Get-Content setup.sh -Raw) -replace "`r`n", "`n" | Set-Content setup.sh -NoNewline
+# PowerShell + WSL (recommended)
+wsl sed -i 's/\r$//' ./setup.sh
 
 # Linux / macOS
 sed -i 's/\r$//' setup.sh
@@ -311,6 +398,7 @@ docker-compose.yml
 setup.sh
 .gitattributes
 ```
+
 
 
 

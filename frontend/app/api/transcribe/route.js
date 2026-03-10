@@ -33,6 +33,13 @@ class InvalidBackendResponseError extends Error {
   }
 }
 
+class BackendStreamError extends Error {
+  constructor(message = "Backend stream returned an error event.") {
+    super(message);
+    this.name = "BackendStreamError";
+  }
+}
+
 function getExtension(filename) {
   const idx = filename.lastIndexOf(".");
   return idx >= 0 ? filename.slice(idx).toLowerCase() : "";
@@ -135,11 +142,32 @@ function parseSummaryJson(text) {
     throw new MissingFinalResponseError();
   }
 
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new InvalidBackendResponseError();
+  const trimmed = text.trim();
+  const fenced = trimmed
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/, "")
+    .trim();
+
+  const candidates = [trimmed, fenced];
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
   }
+
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // Try next candidate.
+    }
+  }
+
+  throw new InvalidBackendResponseError();
 }
 
 function parseContentLength(request) {
@@ -166,6 +194,9 @@ function releaseTranscriptionSlot() {
 }
 
 function toSafeClientMessage(error) {
+  if (error instanceof BackendStreamError) {
+    return error.message;
+  }
   if (error instanceof MissingFinalResponseError) {
     return "Die Verarbeitung wurde beendet, aber es liegt kein Endergebnis vor.";
   }
@@ -312,7 +343,14 @@ export async function POST(request) {
           });
 
           if (!runResponse.ok) {
-            throw new Error(`ADK run_sse failed with status ${runResponse.status}.`);
+            let detail = "";
+            try {
+              detail = (await runResponse.text()).trim();
+            } catch {
+              // Keep original status-only message.
+            }
+            const detailSuffix = detail ? `: ${detail.slice(0, 400)}` : ".";
+            throw new Error(`ADK run_sse failed with status ${runResponse.status}${detailSuffix}`);
           }
 
         if (!runResponse.body) {
@@ -344,6 +382,14 @@ export async function POST(request) {
             const parts = event?.content?.parts;
             const author = event?.author || "";
             const stateDelta = getStateDelta(event);
+
+            const streamError =
+              typeof event?.error === "string"
+                ? event.error.trim()
+                : "";
+            if (streamError) {
+              throw new BackendStreamError(streamError);
+            }
 
             if (author === "transcription_step" && !stageState.transcribeStarted) {
               stageState.transcribeStarted = true;
@@ -484,4 +530,5 @@ export const maxDuration = 300;
   This route intentionally returns NDJSON over chunked HTTP so the browser can
   display ADK progress stages while run_sse events arrive.
 */
+
 

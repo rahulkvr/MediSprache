@@ -215,3 +215,5 @@ models/
 # Frontend
 frontend/node_modules/
 frontend/.next/
+.docker-wsl-no-credstore/
+.claude/settings.local.json

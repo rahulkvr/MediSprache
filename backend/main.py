@@ -13,14 +13,20 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("audio_path", help="Path to a WAV or MP3 file on disk.")
     parser.add_argument(
-        "--ollama-model",
-        dest="ollama_model",
-        help="Ollama model name, e.g. qwen3.5",
+        "--llm-provider",
+        dest="llm_provider",
+        choices=["ollama", "gemini"],
+        help="Summary provider: ollama or gemini.",
     )
     parser.add_argument(
         "--ollama-api-base",
         dest="ollama_api_base",
         help="Ollama API base URL, e.g. http://localhost:11434",
+    )
+    parser.add_argument(
+        "--google-api-key",
+        dest="google_api_key",
+        help="Gemini API key (alternative to GOOGLE_API_KEY env var).",
     )
     parser.add_argument(
         "--whisper-model",
@@ -100,8 +106,9 @@ async def run_cli(audio_path: str) -> None:
 def main() -> None:
     args = parse_args()
     env_updates = {
-        "OLLAMA_MODEL": args.ollama_model,
+        "LLM_PROVIDER": args.llm_provider,
         "OLLAMA_API_BASE": args.ollama_api_base,
+        "GOOGLE_API_KEY": args.google_api_key,
         "WHISPER_MODEL": args.whisper_model,
         "WHISPER_DEVICE": args.whisper_device,
     }

@@ -11,8 +11,11 @@ from google.adk.agents.invocation_context import InvocationContext
 from google.adk.apps.app import App
 from google.adk.events.event import Event
 from google.adk.events.event_actions import EventActions
+from google.adk.models.base_llm import BaseLlm
+from google.adk.models.google_llm import Gemini
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.plugins.save_files_as_artifacts_plugin import SaveFilesAsArtifactsPlugin
+from google.genai import types
 
 from medisprache.prompts import build_schema_instruction, get_prompt_profile
 from medisprache.prompts.registry import COMPACT_CLINICAL_SUMMARY_PROMPT_ID
@@ -20,17 +23,123 @@ from medisprache.schemas.clinical_summary import CompactClinicalSummary
 from medisprache.tools.transcribe_audio import transcribe_audio, transcribe_uploaded_artifact
 
 APP_NAME = "medisprache"
-DEFAULT_OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
-DEFAULT_OLLAMA_API_BASE = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
+SUPPORTED_LLM_PROVIDERS = {"ollama", "gemini"}
+FIXED_OLLAMA_MODEL = "qwen2.5:1.5b"
+FIXED_GEMINI_MODEL = "gemini-3-flash-preview"
+DEFAULT_OLLAMA_API_BASE = "http://localhost:11434"
+GEMINI_THINKING_LEVEL = "high"
 TRANSCRIPT_STATE_KEY = "transcript_text"
 SUMMARY_STATE_KEY = "clinical_summary"
 SUMMARY_PROMPT_ID = os.getenv("SUMMARY_PROMPT_ID", COMPACT_CLINICAL_SUMMARY_PROMPT_ID)
+GEMINI_RESPONSE_JSON_SCHEMA = CompactClinicalSummary.model_json_schema()
 
 SUMMARY_INSTRUCTION = build_schema_instruction(
     schema_model=CompactClinicalSummary,
     config=get_prompt_profile(SUMMARY_PROMPT_ID),
     transcript_state_key=TRANSCRIPT_STATE_KEY,
 )
+
+
+def _get_env(name: str) -> str | None:
+    value = os.getenv(name)
+    if not value:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _resolve_llm_provider() -> str:
+    provider = _get_env("LLM_PROVIDER")
+    if not provider:
+        raise ValueError(
+            "LLM_PROVIDER is required. Set it to 'ollama' or 'gemini'."
+        )
+
+    normalized = provider.lower()
+    if normalized not in SUPPORTED_LLM_PROVIDERS:
+        allowed = ", ".join(sorted(SUPPORTED_LLM_PROVIDERS))
+        raise ValueError(
+            f"Unsupported LLM_PROVIDER '{provider}'. Allowed values: {allowed}."
+        )
+    return normalized
+
+
+def _validate_fixed_model_env_overrides() -> None:
+    fixed_env_values = {
+        "OLLAMA_MODEL": FIXED_OLLAMA_MODEL,
+        "GEMINI_MODEL": FIXED_GEMINI_MODEL,
+    }
+    for env_var, fixed_value in fixed_env_values.items():
+        configured = _get_env(env_var)
+        if configured and configured != fixed_value:
+            raise ValueError(
+                f"{env_var} is fixed in this app. "
+                f"Use '{fixed_value}' or remove {env_var}."
+            )
+
+
+def _build_summary_model(provider: str) -> BaseLlm:
+    _validate_fixed_model_env_overrides()
+
+    if provider == "ollama":
+        ollama_api_base = _get_env("OLLAMA_API_BASE") or DEFAULT_OLLAMA_API_BASE
+        return LiteLlm(
+            model=f"ollama_chat/{FIXED_OLLAMA_MODEL}",
+            api_base=ollama_api_base,
+        )
+
+    if provider == "gemini":
+        if not (_get_env("GOOGLE_API_KEY") or _get_env("GEMINI_API_KEY")):
+            raise ValueError(
+                "Gemini provider selected but no API key configured. "
+                "Set GOOGLE_API_KEY or GEMINI_API_KEY."
+            )
+        return Gemini(model=FIXED_GEMINI_MODEL)
+
+    allowed = ", ".join(sorted(SUPPORTED_LLM_PROVIDERS))
+    raise ValueError(f"Unsupported provider '{provider}'. Allowed values: {allowed}.")
+
+
+def _build_generate_content_config(provider: str) -> types.GenerateContentConfig:
+    if provider == "ollama":
+        return types.GenerateContentConfig(temperature=0)
+
+    if provider == "gemini":
+        # Use JSON mode + JSON schema for Gemini to improve structure fidelity
+        # without relying on ADK output_schema mapping (which currently breaks
+        # for this model/API combination).
+        return types.GenerateContentConfig(
+            temperature=0,
+            response_mime_type="application/json",
+            response_json_schema=GEMINI_RESPONSE_JSON_SCHEMA,
+            thinking_config=types.ThinkingConfig(thinking_level=GEMINI_THINKING_LEVEL),
+        )
+
+    allowed = ", ".join(sorted(SUPPORTED_LLM_PROVIDERS))
+    raise ValueError(f"Unsupported provider '{provider}'. Allowed values: {allowed}.")
+
+
+def _build_summary_agent() -> LlmAgent:
+    provider = _resolve_llm_provider()
+    common_kwargs = dict(
+        model=_build_summary_model(provider),
+        name="summary_step",
+        description="Builds a compact clinical summary JSON from transcript text.",
+        instruction=SUMMARY_INSTRUCTION,
+        generate_content_config=_build_generate_content_config(provider),
+    )
+
+    # Gemini API currently rejects ADK's response_schema payload shape for this
+    # strict schema mode. Keep strict schema mode for Ollama and use Gemini
+    # response_json_schema in generate_content_config instead.
+    if provider == "ollama":
+        return LlmAgent(
+            **common_kwargs,
+            output_schema=CompactClinicalSummary,
+            output_key=SUMMARY_STATE_KEY,
+        )
+
+    return LlmAgent(**common_kwargs)
 
 
 def _extract_audio_path_from_user_content(user_content: object | None) -> str | None:
@@ -116,18 +225,7 @@ transcription_agent = DeterministicTranscriptionAgent(
     ),
 )
 
-summary_agent = LlmAgent(
-    model=LiteLlm(
-        model=f"ollama_chat/{DEFAULT_OLLAMA_MODEL}",
-        api_base=DEFAULT_OLLAMA_API_BASE,
-        temperature=0,
-    ),
-    name="summary_step",
-    description="Builds a compact clinical summary JSON from transcript text.",
-    instruction=SUMMARY_INSTRUCTION,
-    output_schema=CompactClinicalSummary,
-    output_key=SUMMARY_STATE_KEY,
-)
+summary_agent = _build_summary_agent()
 
 root_agent = SequentialAgent(
     name="medisprache_pipeline",
